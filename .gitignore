@@ -1,0 +1,28 @@
+# LaTeX build artefacts
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.run.xml
+*.synctex.gz
+*.toc
+*.lof
+*.lot
+
+# Built PDF, but keep the submitted copies
+paper/*.pdf
+!submissions/*.pdf
+
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows (teammates browsing a clone)
+Thumbs.db
+desktop.ini
