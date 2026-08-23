@@ -5,7 +5,7 @@ Locality-Aware Data Layouts
 
 **Latest PDF:** see [Releases](../../releases) — download from the newest tag.
 
-**Team:** Suvit Vishwakarma, Sumit Biswal, Dhruv Vilas Agrawal, Aayush Verma, Ojas Joshi
+**Team:** Suvit Vishwakarma, Sumit Biswal, Dhruv Vilas Agrawal, Aayush Verma, Ojas Shrikant Joshi
 **Course:** ELL305, Prof. Sumantra Dutta Roy · TA: Garima Singhal
 
 ## How to read the current draft
