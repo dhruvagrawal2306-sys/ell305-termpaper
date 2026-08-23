@@ -1,65 +1,5 @@
 \documentclass[11pt,a4paper]{article}
 
-% ---------------------------------------------------------------------
-% Bibliography source. Exported from the group's shared Zotero library
-% as BibTeX; embedded here via filecontents so the single .tex file
-% remains self-contained and reproducible from a clean checkout of the
-% GitHub repository (see the Zotero .bib export alongside it in the
-% repo for the canonical, independently-importable copy).
-% ---------------------------------------------------------------------
-\usepackage{filecontents}
-\begin{filecontents*}[overwrite]{references.bib}
-@misc{sarangi2024,
-  author       = {Sarangi, Smruti R.},
-  title        = {Basic Computer Architecture},
-  year         = {2024},
-  howpublished = {Self-published (online textbook)},
-  url          = {https://srsarangi.github.io/archbook/archbook.pdf},
-  note         = {Accessed August 2026. Available at \url{https://srsarangi.github.io/archbook/archbook.pdf}}
-}
-
-@book{hp2017,
-  author    = {Hennessy, John L. and Patterson, David A.},
-  title     = {Computer Architecture: A Quantitative Approach},
-  edition   = {6th},
-  publisher = {Morgan Kaufmann},
-  year      = {2017}
-}
-
-@techreport{morton1966,
-  author      = {Morton, Guy M.},
-  title       = {A Computer Oriented Geodetic Data Base and a New Technique in File Sequencing},
-  institution = {IBM Ltd.},
-  year        = {1966}
-}
-
-@inproceedings{frigo1999,
-  author    = {Frigo, Matteo and Leiserson, Charles E. and Prokop, Harald and Ramachandran, Sridhar},
-  title     = {Cache-Oblivious Algorithms},
-  booktitle = {Proceedings of the 40th Annual Symposium on Foundations of Computer Science (FOCS)},
-  pages     = {285--297},
-  year      = {1999}
-}
-
-@inproceedings{pp1984,
-  author    = {Papamarcos, Mark S. and Patel, Janak H.},
-  title     = {A Low-Overhead Coherence Solution for Multiprocessors with Private Cache Memories},
-  booktitle = {Proceedings of the 11th Annual International Symposium on Computer Architecture (ISCA)},
-  pages     = {348--354},
-  year      = {1984}
-}
-
-@article{lamport1979,
-  author  = {Lamport, Leslie},
-  title   = {How to Make a Multiprocessor Computer That Correctly Executes Multiprocess Programs},
-  journal = {IEEE Transactions on Computers},
-  volume  = {C-28},
-  number  = {9},
-  pages   = {690--691},
-  year    = {1979}
-}
-\end{filecontents*}
-
 \usepackage[left=1.5in,right=1in,top=1in,bottom=1in]{geometry}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
@@ -149,7 +89,7 @@ run-time-adaptive extension outlined in Section~\ref{sec:proposal} -- and
 to carry it as far as a semester-length term paper reasonably allows.
 
 \subsection*{2. Mapping to the Textbook}
-All primary readings for this paper are drawn from Sarangi \cite{sarangi2024},
+All primary readings for this paper are drawn from Sarangi \cite{sarangi_basic_2024},
 \emph{Basic Computer Architecture}. Table~\ref{tab:mapping} lists the
 chapter and section correspondence between the textbook's table of contents
 and the material this paper covers.
@@ -169,7 +109,7 @@ Section 5 & \S11.4.5 (MMU), plus external literature & Locality-aware / adaptive
 \bottomrule
 \end{tabular}
 \arrayrulecolor{black}
-\caption{Mapping of paper sections to the sections of Sarangi \cite{sarangi2024}.}
+\caption{Mapping of paper sections to the sections of Sarangi \cite{sarangi_basic_2024}.}
 \label{tab:mapping}
 \end{table}
 
@@ -288,10 +228,10 @@ which prior work it builds on.
 \label{sec:litoverview}
 
 Most of this paper's content is grounded directly in the prescribed
-textbook, Sarangi \cite{sarangi2024}, whose treatment of storage
+textbook, Sarangi \cite{sarangi_basic_2024}, whose treatment of storage
 technology, the cache hierarchy, and multiprocessor memory systems forms
 the backbone of Sections~\ref{sec:background}--\ref{sec:multiprocessor}.
-Hennessy and Patterson \cite{hp2017} is used as a supplementary reference
+Hennessy and Patterson \cite{hennessy_computer_2017} is used as a supplementary reference
 for the memory hierarchy and for cross-checking the representative latency
 figures quoted in Section~\ref{sec:hierarchy}, since it remains the
 standard reference text for quantitative computer architecture.
@@ -299,18 +239,18 @@ standard reference text for quantitative computer architecture.
 Section~\ref{sec:layouts} draws on a different body of literature: work on
 data layouts that are explicitly optimised for locality rather than
 chosen purely for convenience. Morton's original technical report
-\cite{morton1966} introduced the bit-interleaving scheme now known as the
+\cite{morton_computer_1966} introduced the bit-interleaving scheme now known as the
 Z-order curve, originally in the context of geodetic databases rather than
 processor caches, but the same idea turns out to be exactly what is needed
 to keep two-dimensionally nearby points physically nearby in a
-one-dimensional address space. Frigo et al.\ \cite{frigo1999} generalised
+one-dimensional address space. Frigo et al.\ \cite{frigo_cache-oblivious_1999} generalised
 this kind of thinking into the cache-oblivious framework, in which a data
 structure and the algorithms that operate on it are organised recursively
 so that they achieve good locality at every level of the memory hierarchy
 simultaneously, without needing to know the cache size or line size at
-all. On the multiprocessor side, Papamarcos and Patel \cite{pp1984}
+all. On the multiprocessor side, Papamarcos and Patel \cite{papamarcos_low-overhead_1984}
 introduced the MESI protocol that Section~\ref{sec:multiprocessor} uses as
-its running example of a coherence protocol, and Lamport \cite{lamport1979}
+its running example of a coherence protocol, and Lamport \cite{lamport_how_1979}
 gave the formal definition of sequential consistency against which real
 hardware's relaxed consistency models are usually compared. These five
 works, together with the textbook, are the references this draft relies on
@@ -611,7 +551,7 @@ Section~\ref{sec:layouts} returns to in depth.
 \node[lvl=9.2, fill=navy, below=0.15cm of mm, text=white] (ss) {Secondary Storage (SSD/HDD): TBs, $\sim 10^4$--$10^6$ cycles};
 \node[left=0.4cm of l2, rotate=90, anchor=south, color=steel] {\footnotesize fast, small \dots\ slow, large};
 \end{tikzpicture}
-\caption{The memory hierarchy: capacity and latency trade off at every level. Values are representative orders of magnitude rather than specification figures (cf.\ Hennessy and Patterson \cite{hp2017}, Ch.\,2).}
+\caption{The memory hierarchy: capacity and latency trade off at every level. Values are representative orders of magnitude rather than specification figures (cf.\ Hennessy and Patterson \cite{hennessy_computer_2017}, Ch.\,2).}
 \label{fig:hierarchy}
 \end{figure}
 
@@ -787,7 +727,7 @@ multiple-reader (SWMR) invariant: at any instant, either one core may have
 write permission on a line, or any number of cores may have read
 permission, but never both at once. The most widely taught protocol
 achieving this is MESI (Modified, Exclusive, Shared, Invalid)
-\cite{pp1984}, whose four states are summarised in
+\cite{papamarcos_low-overhead_1984}, whose four states are summarised in
 Figure~\ref{fig:mesi}. A line in the Invalid state is not usefully cached
 locally; Shared means the line is cached, clean, and possibly also cached
 elsewhere; Exclusive means the line is cached, clean, and guaranteed to be
@@ -838,7 +778,7 @@ fix.
 \draw[accent] (S) to[bend left=35] node[midway,above,font=\tiny,black]{remote invalidate} (I);
 \draw[accent] (M) to[bend right=35] node[midway,below,font=\tiny,black]{remote request (writeback)} (I);
 \end{tikzpicture}
-\caption{Simplified MESI state diagram, showing the main transitions between the Modified, Exclusive, Shared, and Invalid states \cite{pp1984}.}
+\caption{Simplified MESI state diagram, showing the main transitions between the Modified, Exclusive, Shared, and Invalid states \cite{papamarcos_low-overhead_1984}.}
 \label{fig:mesi}
 \end{figure}
 
@@ -849,7 +789,7 @@ Coherence constrains accesses to a \emph{single} location; memory
 \emph{consistency} constrains the apparent ordering of accesses to
 \emph{different} locations across cores, and the two are easy to conflate
 but genuinely distinct. The strongest commonly discussed model is
-sequential consistency (SC) \cite{lamport1979}, which requires that the
+sequential consistency (SC) \cite{lamport_how_1979}, which requires that the
 result of any execution be equivalent to some total order of all
 operations that is consistent with each individual core's own program
 order. Many real processors, however, implement a more relaxed model such
@@ -940,7 +880,7 @@ next can, in principle, do more.
 
 A more direct response is to change the storage address itself rather
 than the order of computation. Morton's original technical report
-\cite{morton1966} introduced what is now called the Z-order curve: the
+\cite{morton_computer_1966} introduced what is now called the Z-order curve: the
 physical address of a point $(x,y)$ is formed by interleaving the bits of
 $x$ and $y$, so that with $x=x_1x_0$ and $y=y_1y_0$ in binary, the Morton
 code is $y_1x_1y_0x_0$. Figure~\ref{fig:zorder} shows the resulting
@@ -966,7 +906,7 @@ storage order for a $4\times4$ grid.
 \node[draw=sage, fill=sage!30] at (1.8,-2.7) {14};
 \node[draw=sage, fill=sage!30] at (2.7,-2.7) {15};
 \end{tikzpicture}
-\caption{Z-order (Morton) traversal of a $4\times4$ grid: the physical storage index (cell label) recursively clusters each $2\times2$ sub-block (shaded separately here) before moving to the next, so that 2D-nearby points remain 1D-nearby regardless of whether an algorithm scans by row, by column, or by block \cite{morton1966}.}
+\caption{Z-order (Morton) traversal of a $4\times4$ grid: the physical storage index (cell label) recursively clusters each $2\times2$ sub-block (shaded separately here) before moving to the next, so that 2D-nearby points remain 1D-nearby regardless of whether an algorithm scans by row, by column, or by block \cite{morton_computer_1966}.}
 \label{fig:zorder}
 \end{figure}
 
@@ -986,7 +926,7 @@ across many call sites with different access patterns.
 \label{sec:cacheoblivious}
 
 The cache-oblivious school of thought, introduced by Frigo et al.\
-\cite{frigo1999}, generalises the Z-order idea into a full algorithmic
+\cite{frigo_cache-oblivious_1999}, generalises the Z-order idea into a full algorithmic
 framework. Data structures -- and the algorithms that operate over them --
 are organised recursively, so that they achieve asymptotically optimal
 miss counts at \emph{every} level of the memory hierarchy simultaneously,
@@ -1056,11 +996,11 @@ accesses neighbouring pixels in both dimensions rather than along a single
 row. Spatial databases and geographic information systems use Z-order (or
 the closely related Hilbert curve) to index two-dimensional coordinates,
 which is close to the original application Morton had in mind
-\cite{morton1966}. And several modern in-memory data structures --
+\cite{morton_computer_1966}. And several modern in-memory data structures --
 B-trees and B+-trees used in database engines being the most common
 example -- borrow the cache-oblivious idea of choosing a node's fan-out to
 match the cache line size, even when they do not adopt the full recursive
-layout of Frigo et al.\ \cite{frigo1999}. None of this is a coincidence:
+layout of Frigo et al.\ \cite{frigo_cache-oblivious_1999}. None of this is a coincidence:
 it reflects the fact that the mismatch identified in
 Section~\ref{sec:whenfails} is not specific to any one domain, but is a
 consequence of the same flat, one-dimensional address space discussed all
