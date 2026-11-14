@@ -1,0 +1,277 @@
+% ---------------------------------------------------------------
+% ELL305 Term Paper -- shared preamble
+% OWNER: member E. Please route all preamble changes through them.
+% ---------------------------------------------------------------
+
+% --- Page geometry: exactly as the course brief specifies ---
+\usepackage[a4paper,margin=1in,bindingoffset=0.5in]{geometry}
+
+% --- Encoding and fonts ---
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[final]{microtype}
+
+% --- Maths ---
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+% --- Tables and lists ---
+\usepackage{booktabs}
+\usepackage{array}
+% Left-aligned paragraph column for dense comparison tables
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\usepackage{multirow}
+\usepackage{enumitem}
+\setlist{itemsep=2pt, topsep=4pt}
+
+% --- Graphics and diagrams ---
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{colortbl}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,calc,fit,
+                backgrounds,automata,decorations.pathreplacing,patterns}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{forest}
+\usepackage{adjustbox}
+% Figure wrapper: pictures are drawn at natural size (or the scale given),
+% never wider than the line.
+\newenvironment{bigfig}[1][1.0]
+  {\begin{adjustbox}{scale=#1, max width=\linewidth, max totalheight=0.62\textheight}}
+  {\end{adjustbox}}
+
+% --- Floats and captions ---
+\usepackage{float}
+\usepackage[font=small,labelfont=bf,width=0.9\textwidth]{caption}
+% Captions of side-by-side figures take the width of their own minipage.
+\usepackage{etoolbox}
+\AtBeginEnvironment{minipage}{\captionsetup{margin=0pt}}
+% Let LaTeX place figures alongside text more readily, so a figure does
+% not leave a half-empty page behind it.
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\bottomfraction}{0.8}
+\renewcommand{\textfraction}{0.07}
+\renewcommand{\floatpagefraction}{0.8}
+\setcounter{topnumber}{3}
+\setlength{\textfloatsep}{10pt plus 2pt minus 2pt}
+\setlength{\floatsep}{8pt plus 2pt minus 2pt}
+\setlength{\intextsep}{8pt plus 2pt minus 2pt}
+\setcounter{bottomnumber}{2}
+\setcounter{totalnumber}{5}
+
+% --- Including the Turnitin report PDF as Appendix A (rule 5) ---
+\usepackage{pdfpages}
+
+% --- Units, code ---
+\usepackage{siunitx}
+\usepackage{listings}
+\lstset{
+  basicstyle=\ttfamily\footnotesize, breaklines=true, frame=single,
+  numbers=left, numberstyle=\tiny\color{gray},
+  keywordstyle=\color{blue!70!black},
+  commentstyle=\color{green!40!black}\itshape, showstringspaces=false
+}
+
+% --- Citations: numeric, in order of first citation ---
+\usepackage[numbers,square,sort&compress]{natbib}
+
+% ---------------------------------------------------------------
+% Project colour scheme -- used in every figure so all chapters
+% read as one document.
+% ---------------------------------------------------------------
+\definecolor{mesiBlue}{RGB}{31,86,142}
+\definecolor{moesiOrange}{RGB}{201,110,36}
+\definecolor{coreGrey}{RGB}{90,96,104}
+\definecolor{memGreen}{RGB}{46,110,76}
+\definecolor{alertRed}{RGB}{176,48,48}
+\definecolor{softBg}{RGB}{240,243,246}
+% Accent palette: mixed hues for mind maps, decision trees and neutral
+% diagram elements (MESI stays blue and MOESI stays orange wherever the
+% colour carries meaning).
+\definecolor{tealC}{RGB}{22,128,128}
+\definecolor{plumC}{RGB}{125,62,128}
+\definecolor{amberC}{RGB}{186,132,18}
+\definecolor{brickC}{RGB}{176,78,56}
+\definecolor{leafC}{RGB}{78,128,48}
+\definecolor{skyC}{RGB}{48,112,176}
+\definecolor{roseC}{RGB}{184,64,112}
+\definecolor{slateC}{RGB}{84,96,120}
+% Branch colours used in order by the first-level branches of a map
+\colorlet{mapc1}{tealC}  \colorlet{mapc2}{plumC}  \colorlet{mapc3}{amberC}
+\colorlet{mapc4}{brickC} \colorlet{mapc5}{leafC}  \colorlet{mapc6}{skyC}
+\colorlet{mapc7}{roseC}  \colorlet{mapc8}{slateC} \colorlet{mapc9}{tealC}
+\colorlet{mapc10}{plumC} \colorlet{mapc11}{amberC}\colorlet{mapc12}{brickC}
+
+% ---------------------------------------------------------------
+% Headings. Parts use the "top" class so a Part heading sits at the
+% top of a page with its mind map and overview directly beneath it,
+% rather than alone on an otherwise empty page.
+% ---------------------------------------------------------------
+\usepackage{titlesec}
+% "straight" = no forced page break: Parts that should start a new page
+% are preceded by \clearpage in main.tex; the planned Parts III--VII can
+% then share pages instead of each leaving a mostly blank one.
+\titleclass{\part}{straight}
+\titleformat{\part}[display]
+  {\centering\sffamily\bfseries\color{mesiBlue}}
+  {\LARGE\MakeUppercase{\partname}~\thepart}{0.3em}
+  {\rule{0.6\textwidth}{0.8pt}\\[0.35em]\huge}
+  [\vspace{0.1em}\rule{0.6\textwidth}{0.8pt}]
+\titlespacing*{\part}{0pt}{12pt}{10pt}
+
+% Chapters continue on the same page instead of always starting a new one,
+% which removes the half-empty page at the end of most chapters.
+\titleclass{\chapter}{straight}
+\titleformat{\chapter}[display]
+  {\sffamily\bfseries}
+  {\large\color{mesiBlue}\chaptertitlename\ \thechapter}{2pt}
+  {\LARGE}
+\titlespacing*{\chapter}{0pt}{16pt}{10pt}
+
+\titleformat{\section}{\sffamily\bfseries\large}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\sffamily\bfseries}{\thesubsection}{0.8em}{}
+
+% --- Callout boxes ---
+\usepackage[most]{tcolorbox}
+\newtcolorbox{remarkbox}[1][How this report is illustrated]{
+  colback=softBg, colframe=mesiBlue, coltitle=white,
+  colbacktitle=mesiBlue, fonttitle=\sffamily\bfseries,
+  title={#1}, boxrule=0.6pt, arc=2pt,
+  left=8pt, right=8pt, top=6pt, bottom=6pt
+}
+\newtcolorbox{problembox}[1][Problem Statement]{
+  colback=moesiOrange!6, colframe=moesiOrange, coltitle=white,
+  colbacktitle=moesiOrange, fonttitle=\sffamily\bfseries,
+  title={#1}, boxrule=0.8pt, arc=2pt,
+  left=8pt, right=8pt, top=6pt, bottom=6pt
+}
+\newtcolorbox{keybox}[1][Key idea]{
+  colback=memGreen!5, colframe=memGreen, coltitle=white,
+  colbacktitle=memGreen, fonttitle=\sffamily\bfseries\small,
+  title={#1}, boxrule=0.6pt, arc=2pt, fontupper=\small,
+  left=6pt, right=6pt, top=4pt, bottom=4pt
+}
+\newtcolorbox{bookbox}{
+  colback=white, colframe=coreGrey!60, boxrule=0.4pt, arc=1pt,
+  fontupper=\small, left=6pt, right=6pt, top=3pt, bottom=3pt,
+  title={\sffamily\small Mapped to the prescribed textbook},
+  coltitle=coreGrey, colbacktitle=coreGrey!10, fonttitle=\sffamily\bfseries\small
+}
+
+% ---------------------------------------------------------------
+% Mind maps and decision trees (all drawn with forest).
+%
+% forest needs a literal \end{forest} in the source, so it must never
+% be hidden inside another environment's closing hook. The \Forest
+% COMMAND form is safe inside macros, which is what \sectionmap uses.
+%
+%  * part map / chapter map : large, grow left-to-right
+%      \begin{forest} chapter map, [Chapter [Topic [point]] ] \end{forest}
+%  * \sectionmap{[Section [point] [point]]}
+%      a compact map placed directly under every section heading
+%  * decision tree : grows top-to-bottom; label an edge with el=yes
+% ---------------------------------------------------------------
+\forestset{
+  % Each first-level branch takes its own colour (mapc1, mapc2, ...) and
+  % passes a lighter tint of it to everything below it.
+  branch colour/.style={
+    fill=mapc#1!78, draw=mapc#1, text=white,
+    for tree={edge={thick, mapc#1!70, -{Stealth[length=6pt]}}},
+    for descendants={fill=mapc#1!13, draw=mapc#1!70, text=black!85},
+  },
+  chapter map/.style={
+    for tree={
+      grow'=0, parent anchor=east, child anchor=west, anchor=west,
+      align=center, font=\sffamily\footnotesize,
+      draw, thick, rounded corners=3pt, inner sep=3pt,
+      l sep+=8pt, s sep=2pt,
+    },
+    where level=0{fill=slateC!90!black, draw=slateC!90!black, text=white,
+                  font=\sffamily\bfseries}{},
+    where level=1{branch colour/.option=n}{},
+    where level=2{font=\sffamily\scriptsize}{},
+  },
+  part map/.style={
+    chapter map,
+    where level=0{fill=mesiBlue!85!black, draw=mesiBlue!85!black}{},
+  },
+  section map/.style={
+    for tree={
+      grow'=0, parent anchor=east, child anchor=west, anchor=west,
+      align=center, font=\sffamily\scriptsize,
+      draw, rounded corners=2pt, inner sep=2pt,
+      l sep+=6pt, s sep=1.5pt,
+      edge={thick, -{Stealth[length=4pt]}},
+    },
+    where level=0{fill=moesiOrange!88!black, draw=moesiOrange!88!black,
+                  text=white, font=\sffamily\bfseries\footnotesize}{},
+    where level=1{section branch/.option=n}{},
+  },
+  section branch/.style={
+    fill=mapc#1!15, draw=mapc#1, text=black!88,
+    edge={thick, mapc#1!75, -{Stealth[length=5pt]}},
+    for descendants={fill=mapc#1!8, draw=mapc#1!60,
+                     edge={mapc#1!60, -{Stealth[length=4pt]}}},
+  },
+  decision tree/.style={
+    for tree={
+      grow=south, parent anchor=south, child anchor=north, anchor=north,
+      align=center, font=\sffamily\footnotesize,
+      draw, thick, rounded corners=3pt, inner sep=4pt,
+      l sep+=12pt, s sep+=10pt,
+      fill=slateC!10, draw=slateC,
+      edge={thick, slateC!80, -{Stealth[length=5pt]}},
+    },
+    where level=1{tree branch/.option=n}{},
+  },
+  tree branch/.style={
+    for tree={fill=mapc#1!12, draw=mapc#1,
+              edge={thick, mapc#1!75, -{Stealth[length=5pt]}}},
+    for descendants={if n children=0{fill=mapc#1!28}{}},
+    if n children=0{fill=mapc#1!28}{},
+  },
+  el/.style={edge label={node[midway, fill=white, inner sep=1pt,
+             font=\sffamily\tiny\bfseries, text=coreGrey]{#1}}},
+}
+% A compact flow map placed under each section heading.
+\newcommand{\sectionmap}[1]{%
+  \par\vspace{-4pt}{\centering
+  \adjustbox{max width=\linewidth, max totalheight=2.2cm}{\Forest{section map, #1}}\par}\vspace{3pt}}
+
+% --- Planned chapters that appear in the index before they are written ---
+\newcommand{\plannedchapter}[1]{%
+  \refstepcounter{chapter}%
+  \addcontentsline{toc}{chapter}{\protect\numberline{\thechapter}#1 \textit{(in progress)}}}
+
+% --- Handy shorthands for protocol states ---
+\newcommand{\stM}{\textsf{M}}
+\newcommand{\stO}{\textsf{O}}
+\newcommand{\stE}{\textsf{E}}
+\newcommand{\stS}{\textsf{S}}
+\newcommand{\stI}{\textsf{I}}
+\newcommand{\stF}{\textsf{F}}
+\newcommand{\dsr}{\mathrm{DSR}}
+
+% --- Index (rule 8): built by makeindex, which latexmk runs automatically ---
+\usepackage{imakeidx}
+\makeindex[intoc, columns=2, title=Index]
+
+% --- References: hyperref then cleveref, last ---
+\usepackage[hidelinks]{hyperref}
+\usepackage{cleveref}
+
+% --- Glossary (rule 8): generated by LaTeX itself, no external tool ---
+\usepackage[toc, nopostdot, style=list]{glossaries}
+\makenoidxglossaries
+\input{glossary}
+
+% --- Running headers ---
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\nouppercase{\leftmark}}
+\fancyhead[R]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\setlength{\headheight}{14pt}

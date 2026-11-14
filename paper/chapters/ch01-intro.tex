@@ -1,0 +1,152 @@
+% ===============================================================
+%  Chapter 1 -- Introduction and Structure of the Report
+% ===============================================================
+\chapter{Introduction and Structure of the Report}
+\label{ch:intro}
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  chapter map,
+  [Chapter 1
+    [Motivation
+      [Private caches hold copies]
+      [AMD and Intel chose differently]]
+    [Scope
+      [Write-invalidate family]
+      [2 to 16 cores]]
+    [Organisation
+      [Seven Parts]]
+    [Textbook mapping
+      [Sarangi Ch.\ 11--13]]
+  ]
+\end{forest}}
+\caption[]{Structure of Chapter~1. Each coloured branch
+is one section; the pale boxes are the points it makes.}
+\label{fig:ch1-map}
+\end{figure}
+
+\section{Motivation}
+\label{sec:intro-motivation}
+\sectionmap{[Motivation [Every chip is a multicore] [Each core has a private cache]
+  [Copies must agree] [Vendors chose differently]]}
+\index{MOESI}%
+
+Phones, laptops and servers now all use \emph{multicore}\index{multicore processor}
+processors: several cores on one chip, running parts of one program and sharing
+one memory. Each core has a small private cache close to it, because one cache
+serving every core would be too slow. Once two of these caches hold copies of the
+same data, the hardware has to stop the copies from disagreeing in any way a
+program could notice. The mechanism that does this is a
+\emph{\gls{coherence} protocol}\index{cache coherence protocol}.
+
+The two largest x86 vendors extended the same four-state protocol in different
+directions. AMD documents a protocol called \gls{moesi}~\cite{amd64vol2}, and
+Intel's QuickPath processors use one called \gls{mesif}~\cite{goodman2009mesif}.
+This report looks at the AMD side of that choice: what MOESI's extra state saves
+compared with \gls{mesi}, and under which workloads the saving is large enough to
+matter.
+
+\section{Scope of the Report}
+\label{sec:intro-scope}
+\sectionmap{[Scope [In: snooping {\&} directory MSI family] [In: 2--16 cores]
+  [Out: memory consistency] [Out: message passing]]}
+\index{MESI}\index{MOESI}\index{MSI}\index{snooping protocol}\index{directory protocol}\index{memory consistency}\index{verification}%
+
+The report covers hardware cache coherence in shared-memory multicore processors,
+limited to the \gls{invalidate} family that contains \gls{msi}, MESI and MOESI. It
+explains the architecture needed to follow these protocols, the inefficiency that
+MOESI was designed to remove, the published work on that inefficiency, and our own
+simulation study on 2, 4, 8 and 16 cores.
+
+We leave out three neighbouring topics except where a boundary needs marking.
+Memory consistency models deal with ordering across different addresses rather
+than a single address~\cite[\S12.4.3]{sarangi2025basic}. Message-passing systems
+have no shared memory to keep coherent. Formal verification of protocols needs
+tools beyond this course.
+
+\section{Organisation of the Report}
+\label{sec:intro-parts}
+\sectionmap{[Seven Parts [I builds the base] [II states the problem]
+  [III reviews prior work] [IV adds our idea] [V--VII test and conclude]]}
+\index{MESI}\index{MOESI}%
+
+The report has seven Parts, and each one depends only on the Parts before it
+(\cref{fig:report-map}). MESI and MOESI are first described in Part~I
+as plain pieces of architecture. We judge them as solutions only in Part~III,
+after Part~II has stated the problem they are judged against.
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  part map,
+  [This report
+    [Part I: Foundations
+      [Caches] [Parallel processing] [Coherence {\&} the MSI family]]
+    [Part II: The Problem
+      [Origin of overhead] [Forced writebacks]]
+    [Part III: Existing Solutions
+      [Protocols {\&} papers] [Comparison]]
+    [Part IV: Our Contribution
+      [Controlled method] [DSR predictor]]
+    [Part V: Simulation
+      [Two-layer simulator] [Workloads]]
+    [Part VI: Results
+      [Predictions H1--H4 tested]]
+    [Part VII: Limitations {\&} Conclusion
+      [Threats] [Answers to RQ1--RQ4]]
+  ]
+\end{forest}}
+\caption[]{The whole report as one map. Each Part
+opens with its own map (blue root), each chapter with a chapter map (slate root)
+and each section with a small section map (orange root). Decision trees read top
+to bottom; in protocol diagrams blue marks MESI and orange marks MOESI.}
+\label{fig:report-map}
+\end{figure}
+
+\section{Mapping to the Prescribed Textbook}
+\label{sec:intro-textbook}
+\sectionmap{[Textbook mapping [Chapter 11: memory system] [Chapter 12: multiprocessors]
+  [Gap: MESI is an exercise] [Gap: MOESI absent]]}
+\index{MESI}\index{MOESI}\index{MSI}\index{Exclusive state}\index{write-update}\index{Sarangi textbook}%
+
+The prescribed textbook is Sarangi's \emph{Basic Computer Architecture},
+version~3.09~\cite{sarangi2025basic}. \Cref{tab:textbook-map} lists the textbook
+sections each chapter draws on. The textbook develops write-update and MSI
+coherence in detail and introduces the Exclusive state in one paragraph, but it
+leaves the full MESI protocol ``as an exercise for the
+reader''~\cite[\S12.4.6, p.~603]{sarangi2025basic} and does not cover MOESI.
+Our report starts from that point.
+
+\begin{table}[htbp]
+\centering
+\caption{Chapters of this report mapped to sections and pages of the prescribed
+textbook~\cite{sarangi2025basic}. ``---'' marks chapters that build on earlier
+chapters rather than on new textbook material.}
+\label{tab:textbook-map}
+\small
+\begin{tabular}{@{}L{4.0cm} L{6.6cm} L{2.2cm}@{}}
+\toprule
+Report chapter & Textbook sections used & Pages \\
+\midrule
+2 Caches & \S7.4.1--7.4.2 SRAM, CAM; \S11.1--11.2 locality, caches; \S11.3.1--11.3.2 AMAT, misses & 286--537 \\
+3 Parallel processing & \S12.1--12.3 background, Amdahl, Flynn; \S12.4.4; \S12.6 interconnects & 567--630 \\
+4 Coherence & \S12.4.1--12.4.2 axioms; \S12.4.6 snoopy, directory; \S13.4.3 arbitration & 579--603, 674--676 \\
+5 MSI family & \S12.4.6 write-invalidate MSI, Exclusive state & 600--603 \\
+6 History & \S12.1 history of multiprocessors & 567--570 \\
+7 Origin of the cost & \S12.4.2 coherence; \S12.4.6 bus messages & 581--602 \\
+8 Scaling & \S11.3 memory model; \S12.2.3 Amdahl; \S12.6.2 bisection bandwidth & 533--623 \\
+9 Dirty sharing & \S11.2.6 evict; \S12.4.6 Fig.~12.14 & 530--602 \\
+10 Problem statement & builds on Chapters 7--9 & --- \\
+11--12 Owner, update, MESIF & \S12.4.6 write-update, write-invalidate, Exclusive state & 597--603 \\
+13 Directories, tokens & \S12.4.6 directories; \S12.6.2--12.6.3 topologies & 599--603, 622--629 \\
+14 Comparison & builds on 11--13; \S13.4.3 arbitration & 674--676 \\
+15--16 Our method, DSR & \S12.4.1--12.4.2 axioms; \S12.4.6 Fig.~12.14; \S11.3.1 AMAT & 533--534, 579--603 \\
+17--18 Simulator, workloads & \S11.2, \S11.2.6, \S11.3.1; \S12.2; \S13.4.3 & 517--534, 570--577, 674--676 \\
+19--20 Results & \S11.3.1 AMAT; \S12.6.2 bandwidth; \S12.4.6 Fig.~12.14 & 517--534, 602--622 \\
+21--22 Limitations, conclusion & \S11.1--11.3; \S12.4--12.6 & 506--538, 579--629 \\
+\bottomrule
+\end{tabular}
+\end{table}

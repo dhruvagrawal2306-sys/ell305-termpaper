@@ -1,0 +1,1320 @@
+% ===============================================================
+%  PART III -- Existing Solutions to the Forced-Writeback Problem
+%  Chapters 11--14. Uses the shared preamble and refs.bib.
+% ===============================================================
+
+\part{Existing Solutions to the Forced-Writeback Problem}
+\label{part:solutions}
+
+\begin{center}
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  part map,
+  [Part III
+    [Ch.~11: Owner-Based Solutions
+      [Berkeley ownership] [MOESI and the O state] [Limits of ownership]]
+    [Ch.~12: Other Extensions
+      [Write-update: Dragon {\&} Firefly] [MESIF: the F state]]
+    [Ch.~13: Scaling Approaches
+      [Directories: DASH] [Token coherence]]
+    [Ch.~14: Comparative Analysis
+      [Mechanisms] [Traffic model] [Published evaluations] [Research gap]]
+  ]
+\end{forest}}
+\end{center}
+
+\begin{keybox}[What Part III does]
+Part~III reviews published approaches against the problem of Chapter~10. For each
+one we ask what it does when a block held in \stM\ is read by another cache, what
+that costs, and whether it meets the requirements of \cref{fig:req-tree}. The
+approaches fall into three classes. Direct solutions change the block states so
+that modified data can be shared without updating memory (Chapter~11).
+Alternative strategies change how shared data is propagated or forwarded, and
+affect the forced writeback as a side effect (Chapter~12). Organisations change
+how requests travel and are ordered, and leave the writeback to the state
+protocol that runs on top of them (Chapter~13). Chapter~14 compares all three.
+\end{keybox}
+
+% ===============================================================
+%  Chapter 11 -- Owner-Based Solutions: MOESI and the Berkeley Protocol
+% ===============================================================
+\chapter{Owner-Based Solutions: MOESI and the Berkeley Protocol}
+\label{ch:owner}
+\index{MOESI}\index{Berkeley protocol}\index{owner}%
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  chapter map,
+  [Chapter 11
+    [Motivation [Supplier vs owner vs memory] [Clean-S is a choice]]
+    [Berkeley protocol [Shared-Dirty owner] [Invalidate before write]]
+    [MOESI [Three attributes] [M to O] [Futurebus signals]]
+    [Comparison {\&} limits [Table A] [Deferred not removed]]
+  ]
+\end{forest}}
+\caption[]{Structure of Chapter~11. These are the only
+approaches in Part~III designed to let modified data be shared without first
+updating memory.}
+\label{fig:ch11-map}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{Motivation for Owner-Based Protocols}
+\label{sec:own-motivation}
+\sectionmap{[Motivation [Three roles for one block] [MESI merges them on M to S]
+  [Ownership separates responsibility from memory]]}
+\index{MESI}\index{MOESI}\index{Berkeley protocol}\index{coherence axioms}\index{owner}%
+
+A cached block involves three roles: the supplier, which gives the current data
+to a requester; the responsible party, which must make sure the current data
+reaches memory in the end; and memory, which may or may not hold the current
+value. Under MESI the responsible party is the one cache holding the block in
+\stM\ or, if there is none, memory. A block in \stS\ is therefore valid only if
+memory is current (the clean-shared rule of \cref{sec:dirty-root}), and the
+transition $\stM\to\stS$ has to hand responsibility to memory by writing the block
+back. As an invariant, let $\mathcal{O}(b)$ be the set of caches responsible for
+block $b$. Every protocol in this chapter keeps
+\begin{equation}
+  |\mathcal{O}(b)| \le 1
+  \qquad\text{and}\qquad
+  \mathcal{O}(b) = \varnothing \;\Rightarrow\; \text{memory holds the current value of } b.
+  \label{eq:owner-invariant}
+\end{equation}
+MESI also requires that no other valid copy exist while $\mathcal{O}(b)$ is
+non-empty, and it is this extra rule, not \cref{eq:owner-invariant}, that forces
+the writeback. Neither coherence axiom (\cref{sec:coh-meaning}) needs memory to be
+current while some cache is still responsible for the block. An owner-based
+protocol drops only the extra rule: one cache, the \gls{owner}, stays responsible
+for a modified block while other caches hold read-only copies, and memory is
+updated when ownership ends (\cref{fig:roles}).
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}[0.88]
+\begin{tikzpicture}[font=\sffamily\scriptsize,
+    ag/.style={draw, thick, rounded corners=2pt, minimum width=1.9cm,
+               minimum height=0.65cm, align=center, font=\sffamily\small},
+    resp/.style={circle, fill=moesiOrange, text=white, font=\sffamily\bfseries\tiny,
+                 inner sep=1.2pt},
+    m/.style={-{Stealth}, thick}]
+  \node[font=\sffamily\bfseries\small] at (2.2,3.0) {(a) MESI: responsibility moves to memory};
+  \node[ag, fill=mesiBlue!15, draw=mesiBlue] (A) at (0,2.0) {Cache A\\\stM$\,\to\,$\stS};
+  \node[ag, fill=mesiBlue!15, draw=mesiBlue] (B) at (4.4,2.0) {Cache B\\\stI$\,\to\,$\stS};
+  \node[ag, fill=memGreen!15, draw=memGreen] (M) at (2.2,0.0) {Memory\\current};
+  \draw[m, mesiBlue] (A) -- node[above]{data} (B);
+  \draw[m, alertRed, very thick] (A) -- node[left, text=alertRed]{write back} (M);
+  \node[resp] at ($(M.north east)+(0.05,0.05)$) {R};
+  \begin{scope}[xshift=7.6cm]
+  \node[font=\sffamily\bfseries\small] at (2.2,3.0) {(b) Ownership: responsibility stays in A};
+  \node[ag, fill=moesiOrange!15, draw=moesiOrange] (A2) at (0,2.0) {Cache A (owner)\\\stM$\,\to\,$\stO};
+  \node[ag, fill=moesiOrange!15, draw=moesiOrange] (B2) at (4.4,2.0) {Cache B\\\stI$\,\to\,$\stS};
+  \node[ag, fill=coreGrey!10, draw=coreGrey] (M2) at (2.2,0.0) {Memory\\stale};
+  \draw[m, moesiOrange] (A2) -- node[above]{data} (B2);
+  \draw[dashed, coreGrey] (A2) -- (M2);
+  \node[text=coreGrey, align=right, anchor=east] at (0.9,0.45) {written back only\\when A evicts\\the block};
+  \node[resp] at ($(A2.north east)+(0.05,0.05)$) {R};
+  \end{scope}
+\end{tikzpicture}
+\end{bigfig}
+\caption[Responsibility for a dirty block after a remote read]{Where responsibility
+(R) for a modified block sits after another cache reads it. Under MESI it passes to
+memory through a writeback; under ownership it stays with the supplier and memory
+stays stale.}
+\label{fig:roles}
+\end{figure}
+
+The idea is older than the MOESI name. Archibald and Baer, describing the
+protocols of the early 1980s, say the Berkeley protocol ``uses the idea of
+ownership'', and the owner they define is the cache that has the block in
+\textsc{Dirty} or \textsc{Shared-Dirty}~\cite[pp.~277--278]{archibald1986evaluation}.
+
+% ---------------------------------------------------------------
+\section{The Berkeley Ownership Protocol}
+\label{sec:own-berkeley}
+\sectionmap{[Berkeley protocol [Designed with its controller chip] [Four states]
+  [Owner supplies and keeps ownership] [Memory updated on replacement]
+  [Invalidation before every non-owner write]]}
+\index{MESI}\index{MSI}\index{Exclusive state}\index{forced writeback}\index{snooping protocol}\index{Berkeley protocol}\index{coherence axioms}\index{memory consistency}\index{owner}%
+
+Katz, Eggers, Wood, Perkins and Sheldon designed the Berkeley protocol and
+published it as a technical report~\cite{katz1984implementing} and at
+ISCA~1985~\cite{katz1985implementing}. They call it an ``ownership-based
+multiprocessor cache consistency protocol''. The report presents it together
+with a cache controller meant to fit on one VLSI chip, spends much of its length
+on making the controller's concurrent operations safe, and takes that design down
+to a CMOS layout~\cite{katz1984implementing}. The state set is therefore one a
+snooping controller of the early 1980s could actually implement. We could not read
+the original report in full (see the note at the end of this chapter), so the
+states below follow Archibald and Baer's
+description~\cite[pp.~277--278]{archibald1986evaluation} (\cref{tab:berkeley-states}).
+There is no counterpart of \stE: a block read when no other cache holds it enters
+\textsc{Valid}, as in MSI.
+
+\begin{table}[htbp]
+\centering
+\caption{States of the Berkeley protocol as described by Archibald and
+Baer~\cite[pp.~277--278]{archibald1986evaluation}.}
+\label{tab:berkeley-states}
+\small
+\begin{tabular}{@{}l L{4.2cm} c c l@{}}
+\toprule
+State & Meaning & Owner? & Other copies? & Nearest MOESI state \\
+\midrule
+\textsc{Invalid}      & no valid copy & --- & --- & \stI \\
+\textsc{Valid}        & read-only copy; not responsible for memory & no & possibly & \stS \\
+\textsc{Shared-Dirty} & modified; owned by this cache & yes & possibly & \stO \\
+\textsc{Dirty}        & modified; owned by this cache, sole copy & yes & no & \stM \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+On a miss to a block that another cache holds in \textsc{Dirty} or
+\textsc{Shared-Dirty}, the owning cache ``must supply the block contents directly
+to the other cache''. The owner then holds the block in \textsc{Shared-Dirty} and
+the requester in \textsc{Valid}~\cite[p.~278]{archibald1986evaluation}. Memory is
+not written, because a modified block is not written back on becoming
+shared~\cite[p.~277]{archibald1986evaluation}, so responsibility stays with the
+supplier as in \cref{fig:roles}(b). Memory catches up only on replacement: ``A
+block in either state \textsc{Shared-Dirty} or \textsc{Dirty} must be written back
+to main memory if it is selected for
+replacement''~\cite[p.~277]{archibald1986evaluation}.
+
+A cache becomes the owner by writing. A write hit to a block in \textsc{Valid} or
+\textsc{Shared-Dirty} requires that ``an invalidation signal must be sent on the
+bus before the write is allowed to proceed''. Every other copy is invalidated and
+the writer's block becomes \textsc{Dirty}~\cite[p.~278]{archibald1986evaluation}.
+If another cache was the owner, its duty ends with the invalidation, since the new
+write replaces its data, and no writeback is needed.
+
+On the transaction of \cref{fig:dirty-transaction} the Berkeley protocol removes
+the forced writeback completely: one request and one data transfer replace MESI's
+request, data transfer and writeback. The cost shows up elsewhere. With no \stE,
+the first write to any block fetched from memory needs a bus invalidation even
+when no other cache holds the block, which is the inefficiency MESI was designed
+to remove (\cref{sec:fam-mesi}). Against \cref{fig:req-tree}, Berkeley keeps both
+axioms and removes the forced writeback but loses MESI's silent upgrade, so it is
+a ``weaker candidate''.
+
+% ---------------------------------------------------------------
+\section{MOESI: The Owned State}
+\label{sec:own-moesi}
+\sectionmap{[MOESI [A class of compatible protocols] [Three attributes per line]
+  [Intervention: O and M supply data] [Memory updated on replacement]]}
+\index{MESI}\index{MOESI}\index{Owned state}\index{Exclusive state}\index{forced writeback}\index{Berkeley protocol}\index{Dragon protocol}\index{Firefly protocol}\index{Illinois protocol}\index{Futurebus}\index{owner}%
+
+Sweazey and Smith defined a whole class of protocols. As
+long as every cache ``uses a protocol from the class we define, the overall memory
+system state will remain consistent''~\cite[p.~415]{sweazey1986moesi}, and they
+showed how the IEEE Futurebus could support any member of the class. Each cache
+may pick, at any moment, any action that some protocol in the class
+allows~\cite[abstract]{sweazey1986moesi}. They count Berkeley and Dragon as members
+and show how Illinois, Firefly and Write-Once can be adapted to
+fit~\cite[abstract]{sweazey1986moesi}. ``MOESI'' therefore names a state model and
+a set of allowed actions. Two implementations with the same five states may still
+answer the same request differently, so they have to be compared by what they do
+(\cref{sec:own-limits}).
+
+Every line has three attributes, validity, exclusiveness and ownership, and the
+five legal combinations, which ``can be specified with three
+bits''~\cite[p.~416]{sweazey1986moesi}, are the five states: \stM\ (exclusive,
+owned), \stO\ (shareable, owned), \stE\ (exclusive, unowned, unmodified), \stS\
+(shareable, unowned) and \stI. The owned states \stM\ and \stO\ are
+\emph{intervenient}: a cache holding a line in either one ``when it sees a read
+miss\,\ldots\ must supply the data''~\cite[pp.~418--419]{sweazey1986moesi}. The
+owner must either make sure memory is eventually updated, pass ownership to
+another cache, or answer requests in place of
+memory~\cite[p.~417]{sweazey1986moesi}.
+
+\Cref{fig:futurebus-read} shows the remote read on Futurebus. The requester issues
+a read. In the address cycle the owner asserts \textsc{CH} (cache hit: it has the
+data and will keep it) and \textsc{DI} (data intervention: it owns the data and
+takes over the response from memory)~\cite[pp.~417--418]{sweazey1986moesi}. The
+owner then sends the line and moves to \stO, and the requester loads it in \stS.
+\Cref{tab:o-state-questions} answers, from the source, the questions this
+transition raises.
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}[0.85]
+\begin{tikzpicture}[font=\sffamily\scriptsize,
+    ag/.style={draw, thick, rounded corners=2pt, minimum width=2.0cm,
+               minimum height=0.6cm, align=center, font=\sffamily\small},
+    m/.style={-{Stealth}, thick}, sg/.style={font=\sffamily\bfseries\scriptsize}]
+  \node[ag, fill=moesiOrange!15, draw=moesiOrange] (B) at (0,0) {Requester};
+  \node[ag, fill=moesiOrange!15, draw=moesiOrange] (A) at (5.0,0) {Owner (\stM)};
+  \node[ag, fill=memGreen!15, draw=memGreen] (Mm) at (10.0,0) {Memory};
+  \foreach \x in {0,5,10} \draw[dashed, coreGrey!60] (\x,-0.35) -- (\x,-4.0);
+  \draw[m, coreGrey] (0,-0.9) -- node[above]{read (address cycle)} (5,-0.9);
+  \draw[coreGrey, thick] (5,-0.9) -- (10,-0.9);
+  \node[sg, text=moesiOrange, anchor=west] at (5.15,-1.45) {asserts CH: keeps a copy};
+  \node[sg, text=moesiOrange, anchor=west] at (5.15,-1.9) {asserts DI: memory preempted};
+  \draw[m, moesiOrange, very thick] (5,-2.6) -- node[above]{data (cache-to-cache)} (0,-2.6);
+  \node[text=coreGrey, align=left, anchor=west] at (10.15,-2.6) {no response,\\no update};
+  \node[font=\sffamily\bfseries\small, text=moesiOrange] at (0,-3.6) {\stS};
+  \node[font=\sffamily\bfseries\small, text=moesiOrange] at (5,-3.6) {\stO};
+\end{tikzpicture}
+\end{bigfig}
+\caption[The \stM$\to$\stO\ transaction on Futurebus]{A remote read of a modified
+line in a MOESI-class protocol, with the Futurebus signals of Sweazey and
+Smith~\cite[pp.~417--418]{sweazey1986moesi}. The owner keeps the line and the
+responsibility; memory neither responds nor is updated.}
+\label{fig:futurebus-read}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\caption{The \stO\ state, transaction by transaction.}
+\label{tab:o-state-questions}
+\small
+\begin{tabular}{@{}L{4.0cm} L{8.9cm}@{}}
+\toprule
+Question & Answer and basis \\
+\midrule
+Why does the owner send the data? & Only the owner has the current value, and
+  intervenient caches must supply it on a read miss~\cite[pp.~418--419]{sweazey1986moesi}. \\
+Why \stO\ and not \stS? & \stS\ is unowned; moving to it would leave nobody
+  responsible while memory is stale, breaking \cref{eq:owner-invariant}. \\
+Why may memory stay stale? & The owner remains responsible and must update memory,
+  pass ownership or answer for memory~\cite[p.~417]{sweazey1986moesi}. \\
+Why can \stS\ coexist with \stO? & \stS\ copies are read-only and equal to the
+  owner's; no copy can be written without first invalidating the others, so the
+  order axiom holds. \\
+Why is the owner still responsible? & Ownership is one of the three line
+  attributes and is not given up by supplying data~\cite[p.~416]{sweazey1986moesi}. \\
+What happens on eviction? & Copy-back: changes reach memory ``only when the line is
+  replaced''~\cite[p.~416]{sweazey1986moesi}. \\
+How are writes handled? & A write needs exclusiveness; the writer invalidates other
+  copies (Futurebus \textsc{IM}, intent to modify) and holds the line in
+  \stM~\cite[pp.~417--418]{sweazey1986moesi}. The old owner's data is superseded and
+  is not written back. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+MESI and MOESI therefore differ in when memory is written; both are coherent. For a
+producer and one consumer exchanging a block for $k$ rounds before it is evicted,
+the memory writes over the block's lifetime are
+\begin{equation}
+  W_{\mathrm{MESI}}(k) = k,
+  \qquad
+  W_{\mathrm{MOESI}}(k) = 1,
+  \label{eq:wb-timing}
+\end{equation}
+because MESI writes back at every \stM$\to$\stS\ transition and then evicts a clean
+block, while MOESI writes back once, when the owner evicts. In the notation of
+\cref{eq:fwb-fraction}, MOESI has $B_{\mathrm{fwb}}=0$ by construction. Its single
+deferred writeback is a different quantity, $B_{\mathrm{dwb}}$, paid at eviction.
+\Cref{eq:wb-timing} is our own count under the assumptions of Part~II.
+
+In hardware, the \stO\ state needs three bits per line instead of
+two~\cite[p.~416]{sweazey1986moesi}, and the bus must let a cache take over from
+memory (\textsc{DI}) and announce that it keeps a copy (\textsc{CH}). Sweazey and
+Smith also point out that Futurebus ``has no mechanism by which a transfer from one
+cache to another can also update main memory''. Protocols that need that update,
+including Write-Once and Firefly, have to abort the transaction with \textsc{BS}
+(busy), write the line back and start again~\cite[p.~418]{sweazey1986moesi}. On
+such a bus a MESI-style forced writeback costs an aborted and restarted
+transaction, which is more than one extra transfer.
+
+% ---------------------------------------------------------------
+\section{Comparison and Limitations of Owner-Based Approaches}
+\label{sec:own-compare}
+\label{sec:own-limits}
+\sectionmap{[Comparison and limits [Same ownership idea] [Berkeley lacks E]
+  [Deferred not eliminated] [Implementations differ] [Benefit depends on workload]]}
+\index{MESI}\index{MOESI}\index{MESIF}\index{Owned state}\index{Exclusive state}\index{forced writeback}\index{directory protocol}\index{Berkeley protocol}\index{Illinois protocol}\index{Futurebus}\index{gem5}\index{owner}%
+
+Berkeley and MOESI use the same mechanism: on a remote read the owner supplies the
+data, keeps ownership in a shared-dirty state, and leaves memory stale until
+replacement. They differ in three ways. Berkeley has no \stE, so the first write
+to a block fetched from memory costs a bus invalidation. Berkeley is one protocol
+built for one controller, while MOESI is a class whose members may choose
+different allowed actions. And the Futurebus version defines the bus signals
+(\textsc{CH}, \textsc{DI}) that assert ownership. \Cref{tab:ownership-protocols}
+adds the other published protocols with a shared-dirty state.
+
+\begin{table}[htbp]
+\centering
+\caption{Table A: ownership-based protocols and shared-dirty variants.}
+\label{tab:ownership-protocols}
+\scriptsize
+\begin{tabular}{@{}L{1.55cm} L{2.0cm} L{2.15cm} L{1.9cm} L{2.4cm} L{2.4cm}@{}}
+\toprule
+Protocol & State representation & Owner on remote read & Memory updated &
+  Additional messages / signals & Principal limitation \\
+\midrule
+Berkeley~\cite{archibald1986evaluation} & \textsc{I, Valid, SD, Dirty};
+  2 bits & supplies; \textsc{Dirty}/\textsc{SD}$\to$\textsc{SD}; requester
+  \textsc{Valid} & on replacement of \textsc{SD} or \textsc{Dirty} &
+  invalidation before any write to \textsc{Valid} or \textsc{SD} & no \stE:
+  invalidation on first write even if unshared \\
+MOESI class~\cite{sweazey1986moesi} & M, O, E, S, I; 3 bits & supplies
+  (intervention); $\stM\to\stO$ & on replacement, or ownership passed &
+  \textsc{CH}, \textsc{DI} bus signals & members may choose different
+  actions; Futurebus cannot update memory during a transfer \\
+Dragon~\cite{archibald1986evaluation} & \textsc{VE, SC, SD, Dirty};
+  no invalid state & supplies; $\to$\textsc{SD}; requester \textsc{SC} &
+  on replacement of \textsc{SD} & a bus update on every write to a shared
+  block & update traffic per write (Chapter~12) \\
+MESIF variant FM~\cite{goodman2009mesif} & proposed sixth state,
+  Shared-Modified & requester may hold FM and defer cleansing & deferred;
+  not specified & not specified & described in one paragraph only \\
+MOESI-prime~\cite{loughlin2022moesiprime} & MOESI + M$'$, O$'$; 7 states,
+  3 bits & as MOESI & as MOESI & avoids redundant in-DRAM directory writes
+  & added directory-cache contention \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Owner-based protocols remove the forced writeback, but the memory update still has
+to happen, and the literature gives no grounds for treating them as always better
+than MESI. Five limits stand out.
+
+\paragraph{The writeback is deferred.} The owner still writes the block back when
+it evicts it (\cref{eq:wb-timing}). The saving is the $k-1$ overwritten writebacks
+of \cref{sec:dirty-wasted}. If a block is shared once and then evicted, both
+protocols make the same single write at different times. Whether the later write
+is cheaper depends on when eviction happens; we pose this as RQ4 (\cref{tab:rq}),
+and none of the sources answers it.
+
+\paragraph{Memory is stale while an owner exists.} Every request for the block must
+be answered by the owner, which must stand in for memory when
+responding~\cite[p.~417]{sweazey1986moesi}. In our analysis this puts every read
+of a widely shared dirty block on one cache's port, where MESI would let later
+readers be served by memory or any sharer.
+
+\paragraph{More state and control.} MOESI needs three bits per line instead of
+two~\cite[p.~416]{sweazey1986moesi} and a bus that can preempt memory. The Berkeley
+design needed explicit work on controller critical sections and
+interlocks~\cite{katz1984implementing}, since races appear when ownership moves
+during concurrent requests.
+
+\paragraph{Implementations differ.} A protocol called MOESI need not perform the
+\stM$\to$\stO\ transition. Mallya et al.\ report that the gem5
+\texttt{MOESI\_CMP\_directory} implementation they used invalidates its copy on a
+forwarded read of an \stM\ block instead of sharing dirty data, and that it differs
+from \texttt{MESI\_Two\_Level} in many other states and
+transitions~\cite{mallya2015simulation}. A ``MOESI versus MESI'' result has to be
+read with the implementation in mind.
+
+\paragraph{The benefit depends on the workload.} Every source that compares an
+owner protocol with an invalidate protocol finds the advantage conditional.
+Archibald and Baer report that Berkeley ``actually surpasses the Illinois scheme
+at levels of high sharing'', because on a miss to a modified block Berkeley ``does
+not require updating main memory as does
+Illinois''~\cite[p.~295]{archibald1986evaluation}. Fagundes and Souza find that
+MOESI's advantage over MESI shrinks as the LLC grows~\cite{fagundes2024evaluation}.
+Loughlin et al.\ find that replacing MESI with their owner-based MOESI-prime cuts
+the peak DRAM row activation rate substantially while changing execution time by
+only $-0.51\,\%$ to $+0.61\,\%$~\cite{loughlin2022moesiprime}, so fewer memory
+writes need not mean a shorter run.
+
+\begin{remarkbox}[A note on sources]
+We identified the original Berkeley report~\cite{katz1984implementing} and
+paper~\cite{katz1985implementing} and checked their bibliographic details, but
+could not read their full text. The state names and transitions above therefore
+follow Archibald and Baer~\cite{archibald1986evaluation}. Other sources say the
+original paper uses the terms UnOwned, Owned Exclusively and Owned NonExclusively;
+we have not been able to check this against it.
+\end{remarkbox}
+
+% ===============================================================
+%  Chapter 12 -- Other Extensions: MESIF and Write-Update Protocols
+% ===============================================================
+\chapter{Other Extensions: MESIF and Write-Update Protocols}
+\label{ch:other-ext}
+\index{MESIF}%
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  chapter map,
+  [Chapter 12
+    [Write-update protocols [Firefly: caches and memory] [Dragon: caches only]
+      [Update vs invalidate traffic]]
+    [MESIF [The F state] [Reads of M lines migrate]]
+    [Discussion [Remote-read decision tree] [Table B]]
+  ]
+\end{forest}}
+\caption[]{Structure of Chapter~12. Neither family was
+designed to remove the forced writeback; we look at what each does to it as a side
+effect.}
+\label{fig:ch12-map}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{Write-Update Protocols}
+\label{sec:ext-update}
+\sectionmap{[Write-update [Writes propagate to sharers] [Firefly: also to memory]
+  [Dragon: caches only with an owner] [Trade: no misses for update traffic]]}
+\index{MESI}\index{MOESI}\index{forced writeback}\index{write-back cache}\index{write-through cache}\index{Berkeley protocol}\index{Dragon protocol}\index{Firefly protocol}\index{owner}%
+
+A \gls{update} protocol keeps every cached copy valid by sending each write to the
+other caches that hold the block (\cref{sec:coh-update-invalidate}). Archibald and
+Baer call this the distributed-write approach and found that in their model it
+``yields the best performance in the handling of shared
+data''~\cite[p.~294]{archibald1986evaluation}. Firefly and Dragon are often
+grouped together, but they update memory and assign ownership differently, and
+that difference decides what each does to the forced writeback.
+
+\paragraph{Firefly.} The DEC Firefly cache has two tag bits per line,
+\textsc{Dirty} and \textsc{Shared}, and the bus has a signal, \textsc{MShared},
+``asserted during an operation if another cache contains the requested
+location''~\cite[p.~7]{thacker1987firefly}. A write to an unshared line is handled
+as in any write-back cache and ``requires no MBus traffic''. A shared line is
+written through: ``the cache does write-through, and other caches that share the
+datum are updated, as is main storage''~\cite[p.~7]{thacker1987firefly}. On a read
+miss, when another cache holds the line, ``the caches that contain the line supply
+the data, and the memory is inhibited''~\cite[p.~8]{thacker1987firefly}. If the
+supplying cache holds the line dirty, Archibald and Baer say the block is supplied
+and ``written to main memory at the same time'', after which every cache holding
+it, the requester included, is in \textsc{Shared}~\cite[p.~280]{archibald1986evaluation}.
+Firefly therefore never lets a modified block be shared. On the transaction of
+\cref{fig:dirty-transaction} it makes the same memory update as MESI, and after
+that every write to the shared block also goes to memory: ``the Firefly must send
+distributed writes to memory while the Dragon sends them to the caches
+only''~\cite[p.~295]{archibald1986evaluation}. Firefly keeps the forced writeback
+and adds a memory write for each later shared write.
+
+\paragraph{Dragon.} Dragon's states are \textsc{Valid-Exclusive},
+\textsc{Shared-Clean}, \textsc{Shared-Dirty} and \textsc{Dirty}, with no invalid
+state~\cite{archibald1986evaluation}. On a read miss to a block held elsewhere in
+\textsc{Dirty} or \textsc{Shared-Dirty}, the holder ``supplies the data, raises the
+SharedLine, and sets its block state to \textsc{Shared-Dirty}'', and the requester
+takes the block as \textsc{Shared-Clean}~\cite[p.~281]{archibald1986evaluation}.
+Writes to a shared block are broadcast to the other holders, and ``the single-word
+write does not go to main memory''~\cite[p.~282]{archibald1986evaluation}. ``The
+last cache to write it, if any, will have the block in state \textsc{Shared-Dirty}''
+and is ``responsible for updating memory when the block is
+replaced''~\cite[p.~281]{archibald1986evaluation}. Dragon thus has the same
+ownership idea as Berkeley and MOESI, a single shared-dirty owner responsible for
+memory, combined with update in place of invalidation, and on a remote read of a
+modified block it defers the writeback as MOESI does. Sweazey and Smith place
+Dragon in the MOESI class and note that its memory is updated ``only on a
+replacement''~\cite[p.~420]{sweazey1986moesi}.
+
+\paragraph{Update traffic against forced writebacks.} Without invalidations there
+are no misses after a write, but each write to a shared block costs a bus
+transaction, so the outcome depends on how many writes the producer makes between
+reads. We add one assumption to the counting rules of \cref{tab:msg-classes}: a
+single-word update is an 8-byte header plus an 8-byte word, $u=16$\,B. For one
+producer, $C$ consumers and $w$ producer writes per round, the steady-state bytes
+per round are
+\begin{align}
+  B_{\mathrm{MESI}}(C)            &= 160 + 80\,(C-1), \label{eq:upd-mesi}\\
+  B_{\mathrm{MOESI}}(C)           &= \phantom{1}88 + 80\,(C-1), \label{eq:upd-moesi}\\
+  B_{\mathrm{Dragon}}(w)          &= B_{\mathrm{Firefly}}(w) = u\,w = 16\,w. \label{eq:upd-dragon}
+\end{align}
+\Cref{eq:upd-mesi} is \cref{eq:pc-model}. In \cref{eq:upd-moesi} the owner serves
+the consumer's read without a writeback ($8+72$\,B) and the producer's write is an
+invalidating upgrade (8\,B). In \cref{eq:upd-dragon} the consumers' reads all hit
+and one bus update reaches every sharer, so the cost does not depend on $C$.
+Firefly sends the same bus bytes, but each of its $w$ updates also writes memory.
+These are our analytical counts. \Cref{fig:update-vs-invalidate} explains how two
+observations that seem to clash can both hold. Archibald and Baer, whose synthetic
+workload made single-word references to shared blocks, found distributed write
+best for shared data~\cite[p.~294]{archibald1986evaluation}, and Chapter~4 gave the
+usual argument that invalidation wins when a core writes a block many times before
+others read it. The two results sit on opposite sides of the crossover.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}
+  \begin{axis}[width=10.5cm, height=5.2cm,
+      xlabel={Writes by the producer per round, $w$},
+      ylabel={Bus bytes per round ($C=1$)},
+      xmin=1, xmax=16, ymin=0, ymax=270, xtick={1,2,4,6,8,10,12,14,16},
+      legend style={at={(0.02,0.98)}, anchor=north west, font=\scriptsize},
+      grid=major, grid style={coreGrey!15},
+      label style={font=\small}, tick label style={font=\scriptsize}]
+    \addplot[very thick, mesiBlue, domain=1:16] {160};
+    \addlegendentry{MESI (invalidate, forced write back)}
+    \addplot[very thick, moesiOrange, domain=1:16] {88};
+    \addlegendentry{MOESI / Berkeley (invalidate, owner)}
+    \addplot[very thick, tealC, domain=1:16] {16*x};
+    \addlegendentry{Dragon / Firefly (update)}
+    \draw[dashed, coreGrey] (axis cs:5.5,0) -- (axis cs:5.5,88);
+    \draw[dashed, coreGrey] (axis cs:10,0) -- (axis cs:10,160);
+    \node[font=\scriptsize, text=coreGrey, anchor=south west] at (axis cs:5.5,4) {5.5};
+    \node[font=\scriptsize, text=coreGrey, anchor=south west] at (axis cs:10,4) {10};
+  \end{axis}
+\end{tikzpicture}
+\caption[Update and invalidate traffic per producer--consumer round]{Bus bytes per
+round for one producer and one consumer
+(\cref{eq:upd-mesi,eq:upd-moesi,eq:upd-dragon}). Update protocols move fewer bytes
+than MESI below ten writes per round and fewer than MOESI below 5.5; above those
+points invalidation is cheaper. Firefly also writes memory once per update. Our
+analytical model.}
+\label{fig:update-vs-invalidate}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{MESIF: The Forward State}
+\label{sec:ext-mesif}
+\sectionmap{[MESIF [Point-to-point interconnect] [F: one clean forwarder]
+  [A read of M migrates the line] [F is not O]]}
+\index{MOESI}\index{MESIF}\index{forced writeback}\index{snooping protocol}\index{directory protocol}\index{sharing patterns!producer--consumer}%
+
+Goodman and Hum describe \gls{mesif}, finished in 2001 and used in Intel's
+QuickPath Interconnect, as a way to get the latency of snooping on a point-to-point
+network~\cite[\S1]{goodman2009mesif}. Their reference point is a directory
+protocol, which needs ``a minimum of three serial communications to complete a
+memory transaction'' where snooping needs two~\cite[\S1]{goodman2009mesif}. When
+several caches hold a clean line in \stS, none of them is named to answer, so the
+home memory has to serve the request. The Forward state is ``a state assigned to a
+single node among those sharing a cache line'', and that node is ``responsible for
+providing its content when a request is received''~\cite[\S2.1]{goodman2009mesif}.
+When the F holder answers a read, the requester gets the line in F and the old
+holder drops to \stS~\cite[\S2.1.1, case ii]{goodman2009mesif}, so the role moves to
+the latest reader. The authors compare F to an owned state, ``but coherent with
+memory and useful for read requests rather than write
+requests''~\cite[\S2.1]{goodman2009mesif}.
+
+The report treats a read of a line that another node holds in \stM\ as its hardest
+case. In the basic protocol ``the line is transmitted to the requesting node as if
+the request had been a Read-for-Ownership'': the holder gives up its copy and the
+requester gets the line exclusively~\cite[\S2.1.1, case iv]{goodman2009mesif}. No
+memory update is described for this case. A variant lets the holder keep a copy in
+\stS; the requester must then either ``cleanse'' the line, meaning write it back,
+or keep it in a sixth state, Shared-Modified (FM), which postpones the write. The
+report says nothing more about FM~\cite[\S2.1.1, case iv]{goodman2009mesif}.
+
+The basic behaviour avoids the forced writeback by another route than MOESI:
+modified data is never shared because the line migrates. In a producer--consumer
+exchange this costs something MOESI does not pay. By our analysis the producer
+loses its copy at every consumer read, so its next write is a miss that must fetch
+the data (an 8-byte request and a 72-byte transfer) instead of an 8-byte upgrade,
+and with $C$ consumers the line migrates on every read. The paper's projected gain
+of 6 to 11\,\% for four nodes comes from an in-house mean-value-analysis model whose
+algorithms, the authors say, ``cannot be divulged''~\cite[\S3]{goodman2009mesif}.
+For the hitI and hitS cases ``MESIF offers no benefits over the 3-hop
+protocols''~\cite[\S3]{goodman2009mesif}. The protocol adds snoop stalls while a
+forwarding node waits for an acknowledgement, needs the home node to identify every
+party to a conflict ``even in the case of read-only (shared) data'', and uses three
+virtual channels per direction to avoid deadlock~\cite[\S2.1--2.3]{goodman2009mesif}.
+\Cref{tab:f-vs-o} sets F against O.
+
+\begin{table}[htbp]
+\centering
+\caption{The Forward state and the Owned state compared.}
+\label{tab:f-vs-o}
+\small
+\begin{tabular}{@{}L{3.6cm} L{4.3cm} L{4.3cm}@{}}
+\toprule
+ & F (MESIF) & O (MOESI) \\
+\midrule
+Data relative to memory & clean: ``coherent with memory''~\cite[\S2.1]{goodman2009mesif}
+  & dirty: memory may be stale~\cite[p.~416]{sweazey1986moesi} \\
+Responsible for write back & no & yes \\
+Purpose & choose one cache to answer reads of clean shared data &
+  let modified data be shared without updating memory \\
+Effect on the forced writeback & none; the \stM\ case is handled by
+  migration & removes it; deferred to eviction \\
+Interconnect assumed & point-to-point with a home node & designed for a
+  shared bus (Futurebus) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------
+\section{Limitations and Discussion}
+\label{sec:ext-discussion}
+\sectionmap{[Discussion [Five answers to one transaction] [Update: trades misses for writes]
+  [Forwarding: a latency fix] [Table B]]}
+\index{Dragon protocol}\index{Firefly protocol}%
+
+\Cref{fig:remote-read-tree} sorts the protocols of Chapters~11 and~12 by what they
+do on the one transaction this report studies. The sources show five different
+behaviours, and only one of them both shares the data and leaves the holder
+responsible for it. Write-update and forwarding target other costs than the one in
+Chapter~10. Update protocols remove the misses caused by invalidation and pay with
+a bus transaction per shared write (\cref{fig:update-vs-invalidate}); Dragon also
+defers memory updates through ownership and Firefly does not. Forwarding reduces
+the latency of serving clean shared data on a point-to-point network, and handles
+modified data by migration at the cost of the producer's copy.
+\Cref{tab:alt-strategies} summarises the three.
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=0.9\linewidth}{%
+\begin{forest}
+  decision tree,
+  [Remote read of a modified block:\\does the holder supply the data?
+    [{Synapse: holder sends NAK\\writes back; requester\\retries from memory}, el=no]
+    [Does the holder\\keep a copy?, el=yes
+      [{MESIF (basic): line\\migrates as a\\read-for-ownership}, el=no]
+      [Is memory updated\\at this point?, el=yes
+        [{Illinois / MESI\\Write-once, Firefly:\\forced write back}, el=yes]
+        [{Berkeley, MOESI\\Dragon: holder stays\\responsible owner}, el=no]]]]
+\end{forest}}
+\caption[Decision tree: remote read of a modified block]{Five published behaviours
+on the transaction studied here. Synapse, Write-once, Illinois, Firefly, Berkeley
+and Dragon from Archibald and Baer~\cite[pp.~276--281]{archibald1986evaluation};
+MESIF from Goodman and Hum~\cite[\S2.1.1]{goodman2009mesif}; MOESI from Sweazey and
+Smith~\cite[pp.~416--419]{sweazey1986moesi}.}
+\label{fig:remote-read-tree}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\caption{Table B: alternative coherence strategies and the forced writeback.}
+\label{tab:alt-strategies}
+\scriptsize
+\begin{tabular}{@{}L{1.3cm} L{1.7cm} L{2.3cm} L{2.3cm} L{2.0cm} L{2.6cm}@{}}
+\toprule
+Protocol & Strategy & State or forwarding mechanism & Shared modified data &
+  Memory updated & Relevance to the forced writeback \\
+\midrule
+Firefly & update, write-through when shared & \textsc{Dirty} and
+  \textsc{Shared} tag bits; \textsc{MShared} line~\cite{thacker1987firefly} &
+  not allowed; dirty block written to memory when supplied~\cite{archibald1986evaluation}
+  & on every shared write and on eviction & retains it, and adds a memory
+  write per shared write \\
+Dragon & update, caches only & \textsc{VE, SC, SD, Dirty};
+  \textsc{SD} owner~\cite{archibald1986evaluation} & allowed (\textsc{SD})
+  & on replacement of \textsc{SD}~\cite{archibald1986evaluation} & removes it
+  (defers), but adds an update per shared write \\
+MESIF & invalidate, clean forwarding & F: one forwarder among clean
+  copies~\cite{goodman2009mesif} & not in the basic protocol; FM variant
+  proposed & not stated for the basic \stM\ case & addresses a related
+  problem; avoids it by migration in the basic protocol \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ===============================================================
+%  Chapter 13 -- Scaling Approaches: Directories and Token Coherence
+% ===============================================================
+\chapter{Scaling Approaches: Directories and Token Coherence}
+\label{ch:scaling-approaches}
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  chapter map,
+  [Chapter 13
+    [Directories [DASH protocol] [Sharing write back] [Owner-retaining variant]]
+    [Token coherence [Counting tokens] [Owner token] [Persistent requests]]
+    [Discussion [Organisation vs semantics] [Table C]]
+  ]
+\end{forest}}
+\caption[]{Structure of Chapter~13. Both approaches change
+how coherence messages travel and are ordered; the block-state rules on top
+decide what happens to the dirty-sharing transaction.}
+\label{fig:ch13-map}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{Directory-Based Coherence}
+\label{sec:scal-dir}
+\sectionmap{[Directories [Replace broadcast by a sharer list] [DASH: three directory states]
+  [Remote dirty read: four messages] [Memory is updated: sharing write back]]}
+\index{MESI}\index{MOESI}\index{Owned state}\index{dirty sharing}\index{snooping protocol}\index{directory protocol}\index{DASH}\index{owner}%
+
+Chapter~8 showed that snoop lookups grow as $N(N-1)$ (\cref{eq:snoop}) and that a
+bus saturates once demand passes its capacity (\cref{eq:util}). A
+\gls{directory}\index{directory protocol} replaces broadcast with a per-block record
+of the caches that may hold the block, so requests reach only those
+caches~\cite{censier1978directory}. A directory decides where a request goes and
+where it is ordered. Whether a modified block may be shared is a separate
+question, decided by the state protocol.
+
+The Stanford DASH multiprocessor is the standard published example of a directory
+protocol for distributed shared memory. Each memory block is uncached-remote,
+shared-remote or dirty-remote in the directory, and each cached copy is invalid,
+shared or dirty~\cite[\S4]{lenoski1990dash}. A directory entry has one state bit and
+a bit vector with ``a bit for each of the sixteen clusters
+supported''~\cite[\S3]{lenoski1990dash}, which by our count is 17 bits per memory
+block. A request that reaches a cluster no longer holding the block gets a negative
+acknowledgement and is sent again~\cite[\S4.1, \S4.6]{lenoski1990dash}.
+
+The transaction of interest is a read of a block that is dirty in a remote cluster.
+The home directory forwards the request ``to the owning, dirty cluster''. The owner
+sends the data straight to the requester and also sends a sharing writeback to the
+home: ``The sharing writeback request writes the cache block back to memory and
+also updates the directory.'' The directory entry becomes shared-remote and the old
+owner's copy becomes read-only~\cite[\S4.1]{lenoski1990dash}. The paper gives no
+reason for updating memory at this point. This three-cluster transaction takes
+about 80 processor clocks, against about 61 for a read served by a remote home with
+no dirty copy~\cite[\S4.2, Fig.~6]{lenoski1990dash}. DASH thus performs, through
+the home node and over a network, the same memory update that MESI performs on a
+bus. Its cache states have no shared-dirty state, so a dirty block must become
+clean when it is shared, and moving from snooping to a directory changes only the
+route the transaction takes.
+
+A directory can keep a dirty owner if it records which cache is the owner as well
+as the sharers. A read of a dirty block is then forwarded to the owner, answered
+from its cache and logged as a new sharer, with no writeback. Loughlin et al.\
+study this combination on Intel's directory-based ccNUMA systems. They show that
+MESI's ``downgrade writebacks'' on dirty sharing reach DRAM, that MOESI's \stO\
+state removes them, and their MOESI-prime adds two states to avoid redundant
+writes of the in-DRAM directory as well~\cite{loughlin2022moesiprime}.
+\Cref{fig:dir-dirty-read} compares DASH with an owner-retaining directory. The
+second is our construction, assuming one control message tells the home about the
+new sharer.
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}[0.88]
+\begin{tikzpicture}[font=\sffamily\scriptsize,
+    ag/.style={draw, thick, rounded corners=2pt, minimum width=1.6cm,
+               minimum height=0.55cm, font=\sffamily\small, align=center},
+    m/.style={-{Stealth}, thick}]
+  \node[font=\sffamily\bfseries\small] at (2.3,2.5) {(a) DASH: sharing write back};
+  \node[ag, fill=mesiBlue!15, draw=mesiBlue] (R) at (0,0) {Req.};
+  \node[ag, fill=moesiOrange!15, draw=moesiOrange] (H) at (2.3,1.6) {Home};
+  \node[ag, fill=mesiBlue!15, draw=mesiBlue] (O) at (4.6,0) {Owner};
+  \draw[m, coreGrey] (R) -- node[left, pos=0.4]{1. read 8\,B} (H);
+  \draw[m, coreGrey] (H) -- node[left, pos=0.55]{2. fwd 8\,B} (O);
+  \draw[m, mesiBlue] (O) -- node[below]{3. data 72\,B} (R);
+  \draw[m, alertRed, very thick] (O.north east) to[out=70, in=0] node[right, text=alertRed, pos=0.4]{4. sharing WB 72\,B} (H.east);
+  \node[text=coreGrey] at (2.3,-1.0) {4 messages, 160\,B; memory written};
+  \begin{scope}[xshift=7.6cm]
+  \node[font=\sffamily\bfseries\small] at (2.3,2.5) {(b) Directory with an owner};
+  \node[ag, fill=mesiBlue!15, draw=mesiBlue] (R2) at (0,0) {Req.};
+  \node[ag, fill=moesiOrange!15, draw=moesiOrange] (H2) at (2.3,1.6) {Home};
+  \node[ag, fill=moesiOrange!15, draw=moesiOrange] (O2) at (4.6,0) {Owner (\stO)};
+  \draw[m, coreGrey] (R2) -- node[left, pos=0.4]{1. read 8\,B} (H2);
+  \draw[m, coreGrey] (H2) -- node[left, pos=0.55]{2. fwd 8\,B} (O2);
+  \draw[m, moesiOrange] (O2) -- node[below]{3. data 72\,B} (R2);
+  \draw[m, coreGrey, dashed] (O2.north east) to[out=70, in=0] node[right, pos=0.4]{4. ack 8\,B} (H2.east);
+  \node[text=coreGrey] at (2.3,-1.0) {4 messages, 96\,B; memory not written};
+  \end{scope}
+\end{tikzpicture}
+\end{bigfig}
+\caption[A remote dirty read under two directory protocols]{A read of a block dirty
+in another cache. (a)~DASH~\cite[\S4.1]{lenoski1990dash}: the sharing writeback
+updates memory and the directory. (b)~An owner-retaining directory (our
+construction): a control message records the new sharer and memory stays stale.
+Both have three messages on the critical path; bytes use \cref{tab:msg-classes}.}
+\label{fig:dir-dirty-read}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{Token Coherence}
+\label{sec:scal-token}
+\sectionmap{[Token coherence [T tokens per block] [One token to read; all to write]
+  [The owner token carries data] [Correctness substrate plus performance policy]]}
+\index{MOESI}\index{directory protocol}\index{token coherence}\index{write-invalidate}\index{sharing patterns!migratory}\index{owner}\index{reading indices}%
+
+Martin, Hill and Wood separate the mechanism that keeps a system correct from the
+one that makes it fast~\cite{martin2003token}. The correctness substrate counts
+tokens\index{token coherence}: ``the system assigns each block $T$ tokens (where $T$
+is at least as large as the number of processors)'', and a processor ``can write a
+block only if it holds all $T$ tokens'' and ``can read a block only if it holds at
+least one token''~\cite[\S3.1]{martin2003token}. A writer must collect every token,
+so nobody else can hold a readable copy during a write. This gives the
+single-writer property of write-invalidate without an ordered interconnect.
+
+One token is the owner token, and ``if a coherence message contains the owner
+token, it must contain data''. Holding the owner token without all the others
+``maps to the familiar MOESI state owned (O)''~\cite[\S3.1]{martin2003token}. On a
+shared (read) request, a holder missing some tokens ``sends the data with one token
+(usually not the owner token)''~\cite[\S4.2]{martin2003token}. On eviction a
+processor returns all its tokens to memory, with data if the owner token is among
+them~\cite[\S3.1]{martin2003token}. The paper does not state directly what happens
+to memory on a read of a modified block. From these rules we infer that the owner
+keeps the owner token and the duty to return data to memory, so the read is served
+without a memory update, as in MOESI. One exception is stated: a processor that has
+all tokens and has written the block answers a shared request with ``the data and
+all tokens''~\cite[\S4.2]{martin2003token}, an optimisation for migratory sharing
+that hands over ownership instead of sharing it.
+
+Requests in the performance policy are ``fast, unordered `hint' requests'' that may
+fail. A processor that suspects starvation issues a persistent request, and the
+substrate activates ``at most one persistent request per
+block''~\cite[\S3.2, \S4.1]{martin2003token}. The evaluated policy, TokenB,
+broadcasts all transient requests over an unordered two-dimensional
+torus~\cite[\S4.2, \S5.2]{martin2003token}. On a simulated 16-processor SPARC system
+running OLTP, Apache and SPECjbb, ``only 3.0\,\% of cache misses are issued more
+than once and only 0.2\,\% resort to persistent requests''. TokenB is reported
+17--54\,\% faster than the paper's directory protocol and 8--29\,\% faster than its
+Hammer protocol, while the directory protocol ``uses 21--25\,\% less'' interconnect
+traffic~\cite[\S6]{martin2003token}. Token state costs $2+\log_2 T$ bits per block,
+one byte for $T=64$ with 64-byte blocks~\cite[\S3.1]{martin2003token}.
+
+TokenB removes the indirection of \cref{fig:dir-dirty-read}, since the owner answers
+the requester directly, and by the inference above it also removes the writeback.
+It pays with broadcast. Counting each broadcast as $N-1$ point-to-point messages of
+8 bytes (the paper's request size~\cite[\S5.1]{martin2003token}), a read served by
+an owner costs
+\begin{equation}
+  B_{\mathrm{TokenB}}(N) = 8\,(N-1) + 72 \ \text{bytes},
+  \label{eq:tokenb}
+\end{equation}
+or 80, 96, 128 and 192 bytes for 2, 4, 8 and 16 processors. This is our analytical
+count; the paper reports aggregate traffic, not this transaction.
+
+% ---------------------------------------------------------------
+\section{Limitations and Discussion}
+\label{sec:scal-discussion}
+\sectionmap{[Discussion [Directories cut broadcast and add a hop]
+  [Tokens cut the hop and add broadcast] [Writeback set by the state rules] [Table C]]}
+\index{MOESI}\index{directory protocol}\index{token coherence}\index{DASH}\index{owner}%
+
+Directories and tokens answer the scaling problem of Chapter~8 in opposite ways. A
+directory removes broadcast but adds an indirection and per-block storage that
+grows with the processor count; Lenoski et al.\ note that full bit vectors grow with
+both memory size and processor count and suggest limited-pointer and sparse
+directories~\cite[\S6]{lenoski1990dash}. Token coherence removes the indirection and
+needs no ordered interconnect, but uses broadcast requests and a starvation
+mechanism. Neither, by its organisation alone, decides whether a modified block is
+written back when shared. DASH writes it back, while an owner-retaining directory,
+MOESI-prime and the owner token do not (\cref{tab:organisations}). Reducing
+communication overhead and removing premature writebacks are therefore independent
+goals, and published systems combine either kind of organisation with either kind
+of state protocol.
+
+\begin{table}[htbp]
+\centering
+\caption{Table C: coherence organisations, separating communication and
+permissions from the dirty-sharing transaction.}
+\label{tab:organisations}
+\scriptsize
+\begin{tabular}{@{}L{1.55cm} L{2.2cm} L{1.9cm} L{2.0cm} L{2.0cm} L{2.6cm}@{}}
+\toprule
+Organisation & Communication & Ordering point & Permission mechanism &
+  Extra storage & Dirty-sharing transaction \\
+\midrule
+Snooping bus & broadcast to all caches & the bus & block states (MSI family)
+  & none & set by the state protocol: MESI writes back, MOESI defers \\
+Directory (DASH) & point-to-point via home & home directory & directory
+  state + cache states & state bit + sharer vector per block~\cite{lenoski1990dash}
+  & DASH writes back (sharing writeback)~\cite{lenoski1990dash}; an
+  owner-retaining directory need not~\cite{loughlin2022moesiprime} \\
+Token (TokenB) & broadcast hints, unordered torus & none needed; persistent
+  requests for starvation & token counts and owner token & $2+\log_2T$ bits
+  per block~\cite{martin2003token} & owner token keeps responsibility; no
+  memory update inferred~\cite{martin2003token} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ===============================================================
+%  Chapter 14 -- Comparative Analysis of Existing Solutions
+% ===============================================================
+\chapter{Comparative Analysis of Existing Solutions}
+\label{ch:comparative}
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  chapter map,
+  [Chapter 14
+    [Mechanisms [Three classes] [Nine approaches]]
+    [Traffic [Counting rules] [Four sharing patterns]]
+    [Trade-offs {\&} evaluations [{Latency, state}] [Seven studies]]
+    [Research gap [Table D] [Two open questions]]
+  ]
+\end{forest}}
+\caption[]{Structure of Chapter~14: one set of criteria, from
+Chapter~10, applied to every approach of Chapters~11 to~13.}
+\label{fig:ch14-map}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{Comparison of Underlying Mechanisms}
+\label{sec:cmp-mechanisms}
+\sectionmap{[Mechanisms [Direct solutions change the states]
+  [Alternative strategies change propagation] [Organisations change communication]
+  [Nine approaches in one table]]}
+\index{Dragon protocol}%
+
+\Cref{fig:classes} places each approach in one of the three classes of Part~III.
+Dragon appears twice because it combines an ownership state with update.
+\Cref{tab:mechanisms} records, for each approach, the properties that decide its
+behaviour on the transaction of \cref{fig:dirty-transaction}. The last two rows are
+organisations, not complete state protocols, so their entries describe the
+published protocols evaluated with them.
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=0.82\linewidth}{%
+\begin{forest}
+  for tree={
+    grow'=0, parent anchor=east, child anchor=west, anchor=west,
+    align=center, font=\sffamily\small, draw, thick, rounded corners=3pt,
+    inner sep=4pt, l sep+=14pt, s sep+=1pt,
+    edge={thick, coreGrey!60, -{Stealth[length=5pt]}},
+  },
+  [Approaches\\reviewed, fill=mesiBlue, draw=mesiBlue, text=white, font=\sffamily\bfseries\small
+    [Direct solutions:\\shared-dirty owner, fill=memGreen!20, draw=memGreen
+      [Berkeley, fill=memGreen!8, draw=memGreen!60]
+      [MOESI class, fill=memGreen!8, draw=memGreen!60]
+      [Dragon (owner part), fill=memGreen!8, draw=memGreen!60]]
+    [Alternative strategies:\\propagation and forwarding, fill=moesiOrange!20, draw=moesiOrange
+      [Firefly: update and write-through, fill=moesiOrange!8, draw=moesiOrange!60]
+      [Dragon (update part), fill=moesiOrange!8, draw=moesiOrange!60]
+      [MESIF: clean forwarding, fill=moesiOrange!8, draw=moesiOrange!60]]
+    [Organisations:\\how requests travel, fill=coreGrey!20, draw=coreGrey
+      [Directory (DASH), fill=coreGrey!8, draw=coreGrey!60]
+      [Token coherence, fill=coreGrey!8, draw=coreGrey!60]]
+  ]
+\end{forest}}
+\caption[Classification of the approaches reviewed]{The three classes. Only the
+first targets the forced writeback by design; the second affects it as a side
+effect; the third leaves it to the state protocol on top.}
+\label{fig:classes}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\caption{Underlying mechanisms of the approaches reviewed. ``WB'' = writeback.}
+\label{tab:mechanisms}
+\scriptsize
+\begin{tabular}{@{}L{1.25cm} L{1.35cm} L{1.75cm} L{1.05cm} L{1.05cm} L{1.75cm} L{1.85cm} L{1.75cm}@{}}
+\toprule
+Approach & Strategy & State or permission model & Dirty data shared? &
+  Explicit owner? & Supplier on remote read & Memory updated & Forced WB \\
+\midrule
+MSI & invalidate & M, S, I~\cite{sarangi2025basic} & no & M only & holder of M &
+  at M$\to$S and on eviction of M & present \\
+MESI & invalidate & M, E, S, I~\cite{papamarcos1984illinois} & no & M only & holder of M &
+  at M$\to$S and on eviction of M & present (baseline) \\
+MOESI & invalidate & M, O, E, S, I~\cite{sweazey1986moesi} & yes (O) & yes &
+  owner (M or O) & on eviction of owner & eliminated; deferred to eviction \\
+Berkeley & invalidate & I, Valid, SD, Dirty~\cite{archibald1986evaluation} & yes (SD)
+  & yes & owner & on eviction of owner & eliminated; deferred to eviction \\
+Dragon & update & VE, SC, SD, Dirty~\cite{archibald1986evaluation} & yes (SD)
+  & yes & owner & on eviction of SD owner & eliminated; replaced by update traffic \\
+Firefly & update, write-through & Dirty, Shared bits~\cite{thacker1987firefly} &
+  no & no & caches holding it & at sharing, on every shared write, on eviction & retained; extra memory writes \\
+MESIF & invalidate, forwarding & M, E, S, I, F~\cite{goodman2009mesif} & no (basic)
+  & no & F holder (clean); M holder by migration & not stated for the M case &
+  avoided by migration (basic) \\
+Directory (DASH) & organisation & 3 directory + 3 cache states~\cite{lenoski1990dash}
+  & no & dirty owner only & owner, forwarded by home & sharing WB at the remote read &
+  retained \\
+Token (TokenB) & organisation & token counts, owner token~\cite{martin2003token}
+  & yes (owner token) & yes & owner-token holder & on eviction of owner token &
+  eliminated (inferred) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------
+\section{Comparison of Communication and Memory Traffic}
+\label{sec:cmp-traffic}
+\sectionmap{[Traffic [One set of counting rules] [Bus protocols in one table]
+  [Point-to-point counted separately] [Bar graphs per pattern]]}
+\index{MESI}\index{MOESI}\index{MESIF}\index{Exclusive state}\index{directory protocol}\index{token coherence}\index{Dragon protocol}\index{sharing patterns!producer--consumer}\index{sharing patterns!migratory}\index{owner}%
+
+None of the sources reports traffic for these protocols in one common
+configuration, so this section is our own analytical accounting. It applies the
+rules of \cref{tab:counting-rules} to the same access sequences under each
+protocol. Bus and point-to-point protocols are counted separately, since one bus
+broadcast and $N-1$ point-to-point messages are different costs.
+
+\begin{table}[htbp]
+\centering
+\caption{Counting rules for the analytical comparison. Rows~1--3 are those of
+\cref{tab:msg-classes}; rows~4--6 are assumptions added for Part~III.}
+\label{tab:counting-rules}
+\small
+\begin{tabular}{@{}c L{5.4cm} L{6.0cm}@{}}
+\toprule
+ & Item & Rule \\
+\midrule
+1 & Control message (request, invalidation, upgrade) & 8\,B on the interconnect \\
+2 & Data message (block to a cache) & 72\,B (64\,B block + 8\,B header) \\
+3 & Writeback message & 72\,B on the interconnect; 64\,B written to memory \\
+4 & Word update (Dragon, Firefly) & 16\,B (8\,B header + 8\,B word); Firefly
+  also writes 8\,B to memory \\
+5 & Bus broadcast & counted once: one transaction reaches all caches \\
+6 & Point-to-point broadcast (TokenB) & counted as $N-1$ messages \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\Cref{tab:traffic-patterns} gives the cost of each sharing pattern of
+\cref{tab:patterns} under the six bus protocols, as interconnect bytes and bytes
+written to memory, derived from the transitions cited in Chapters~11 and~12. A
+migratory hand-off under MESI, for example, is a read miss served by the \stM\
+holder with a writeback ($8+72+72$) followed by an upgrade (8), 160\,B in all.
+Under MOESI the owner serves the read without a writeback ($8+72$) and the upgrade
+invalidates the old owner, whose data is superseded (8), giving 88\,B. Under
+Dragon every core keeps a copy once it has taken part, so in steady state a
+hand-off is one update; the writer becomes \textsc{Shared-Dirty} and the previous
+owner \textsc{Shared-Clean}~\cite[p.~282]{archibald1986evaluation}.
+
+\begin{table}[htbp]
+\centering
+\caption{Analytical traffic per unit of each sharing pattern, as interconnect
+bytes\,/\,bytes written to memory, with one producer write per round ($w=1$) and
+one consumer ($C=1$). Our counts, using \cref{tab:counting-rules}.}
+\label{tab:traffic-patterns}
+\small
+\begin{tabular}{@{}L{3.0cm} c c c c c c@{}}
+\toprule
+Pattern (unit) & MSI & MESI & MOESI & Berkeley & Dragon & Firefly \\
+\midrule
+Private (read, write, evict) & 160\,/\,64 & 152\,/\,64 & 152\,/\,64 & 160\,/\,64 & 152\,/\,64 & 152\,/\,64 \\
+Read-only (per reader) & 80\,/\,0 & 80\,/\,0 & 80\,/\,0 & 80\,/\,0 & 80\,/\,0 & 80\,/\,0 \\
+Producer--consumer (per round) & 160\,/\,64 & 160\,/\,64 & 88\,/\,0$^{*}$ & 88\,/\,0$^{*}$ & 16\,/\,0$^{*}$ & 16\,/\,8 \\
+Migratory (per hand-off) & 160\,/\,64 & 160\,/\,64 & 88\,/\,0$^{*}$ & 88\,/\,0$^{*}$ & 16\,/\,0$^{*}$ & 16\,/\,8 \\
+\bottomrule
+\multicolumn{7}{@{}p{12.6cm}@{}}{\footnotesize $^{*}$Plus one deferred
+writeback (72\,B, 64\,B to memory) when the owner finally evicts the block,
+amortised over all rounds. Private-pattern differences come only from the
+\stE\ state: MSI and Berkeley need an upgrade on the first write; the others
+upgrade silently~\cite[pp.~279--282]{archibald1986evaluation}.}
+\end{tabular}
+\end{table}
+
+The private and read-only patterns cost the same under every protocol apart from
+the \stE\ effect, so a workload made of them gains nothing from ownership or
+update. In producer--consumer and migratory sharing, ownership removes every
+memory write and cuts interconnect bytes by 45\,\% relative to MESI, which is the
+forced-writeback fraction of \cref{eq:pc-model}. Update protocols move the fewest
+bytes at $w=1$, but lose that advantage as $w$ grows
+(\cref{fig:update-vs-invalidate}). \Cref{fig:bars-pc,fig:bars-mig} show the two
+patterns in which the protocols differ.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[t]{0.5\linewidth}\centering
+\begin{tikzpicture}
+  \begin{axis}[width=\linewidth, height=5.2cm, ybar, bar width=4pt,
+      xlabel={Number of consumers $C$}, ylabel={Bytes per round},
+      symbolic x coords={1,2,4,8}, xtick=data, ymin=0, ymax=800,
+      enlarge x limits=0.18,
+      legend style={at={(0.02,0.98)}, anchor=north west, font=\tiny},
+      grid=major, grid style={coreGrey!15},
+      label style={font=\footnotesize}, tick label style={font=\scriptsize}]
+    \addplot[fill=mesiBlue!65, draw=mesiBlue] coordinates {(1,160) (2,240) (4,400) (8,720)};
+    \addlegendentry{MSI / MESI}
+    \addplot[fill=moesiOrange!65, draw=moesiOrange] coordinates {(1,88) (2,168) (4,328) (8,648)};
+    \addlegendentry{MOESI / Berkeley}
+    \addplot[fill=tealC!70, draw=tealC] coordinates {(1,16) (2,16) (4,16) (8,16)};
+    \addlegendentry{Dragon / Firefly, $w=1$}
+    \addplot[fill=plumC!45, draw=plumC] coordinates {(1,128) (2,128) (4,128) (8,128)};
+    \addlegendentry{Dragon / Firefly, $w=8$}
+  \end{axis}
+\end{tikzpicture}
+\caption[Producer--consumer traffic by protocol]{Producer--consumer: ownership saves
+72 bytes per round; update cost does not depend on $C$ but grows with $w$. Firefly
+also writes $8w$ bytes to memory. Our model.}
+\label{fig:bars-pc}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}\centering
+\begin{tikzpicture}
+  \begin{axis}[width=\linewidth, height=5.2cm, ybar, bar width=4pt,
+      ylabel={Bytes per hand-off},
+      symbolic x coords={MSI,MESI,MOESI,Berk.,Dragon,Firefly}, xtick=data,
+      ymin=0, ymax=220, enlarge x limits=0.1,
+      legend style={at={(0.98,0.98)}, anchor=north east, font=\tiny},
+      grid=major, grid style={coreGrey!15},
+      label style={font=\footnotesize}, tick label style={font=\tiny}]
+    \addplot[fill=skyC!60, draw=skyC] coordinates
+      {(MSI,160) (MESI,160) (MOESI,88) (Berk.,88) (Dragon,16) (Firefly,16)};
+    \addlegendentry{interconnect, $w=1$}
+    \addplot[fill=amberC!45, draw=amberC] coordinates
+      {(MSI,160) (MESI,160) (MOESI,88) (Berk.,88) (Dragon,128) (Firefly,128)};
+    \addlegendentry{interconnect, $w=8$}
+    \addplot[fill=brickC!65, draw=brickC] coordinates
+      {(MSI,64) (MESI,64) (MOESI,0) (Berk.,0) (Dragon,0) (Firefly,8)};
+    \addlegendentry{to memory, $w=1$}
+  \end{axis}
+\end{tikzpicture}
+\caption[Migratory-sharing traffic by protocol]{Migratory: bytes per hand-off when
+each core reads a block and writes it $w$ times. Only MSI and MESI write memory at
+every hand-off. Our model.}
+\label{fig:bars-mig}
+\end{minipage}
+\end{figure}
+
+For the point-to-point organisations of Chapter~13 the dirty-sharing transaction is
+compared in \cref{tab:p2p}. Removing the writeback saves the same 64 bytes of memory
+traffic in the directory and token organisations, while TokenB's interconnect cost
+grows with $N$ and the directory's does not. We do not cost MESIF: its message set
+(invalid-state acknowledgements, cancellations and data acknowledgements to the
+home node~\cite[\S2.1.1]{goodman2009mesif}) belongs to a protocol the report gives
+only in outline, and a byte count would rest on assumptions the source does not
+support.
+
+\begin{table}[htbp]
+\centering
+\caption{The remote dirty read on point-to-point organisations. Our analytical
+counts, using \cref{tab:counting-rules}.}
+\label{tab:p2p}
+\small
+\begin{tabular}{@{}L{3.9cm} c c c c@{}}
+\toprule
+Organisation & Messages & Bytes & Critical-path hops & Memory written \\
+\midrule
+Directory, DASH (sharing WB)~\cite{lenoski1990dash} & 4 & 160 & 3 & 64\,B \\
+Directory with owner (\cref{fig:dir-dirty-read}b) & 4 & 96 & 3 & 0 \\
+TokenB, $N=4$ (\cref{eq:tokenb}) & 4 & 96 & 2 & 0 \\
+TokenB, $N=16$ (\cref{eq:tokenb}) & 16 & 192 & 2 & 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------
+\section{Trade-offs and Published Evaluations}
+\label{sec:cmp-tradeoffs}
+\label{sec:cmp-evaluations}
+\sectionmap{[Trade-offs [Latency evidence from the papers] [State and storage cost]
+  [Fewer write backs need not mean less time] [Seven studies]]}
+\index{MESI}\index{MOESI}\index{MESIF}\index{Exclusive state}\index{forced writeback}\index{token coherence}\index{Berkeley protocol}\index{Dragon protocol}\index{Firefly protocol}\index{Illinois protocol}\index{Futurebus}\index{DASH}\index{gem5}\index{cache-to-cache transfer}%
+
+The sources report latency in different units and configurations, so only
+comparisons within one study mean anything. On Futurebus a protocol that must
+update memory during a cache-to-cache transfer aborts and restarts the
+transaction~\cite[p.~418]{sweazey1986moesi}, so the forced writeback lengthens the
+read itself. In DASH a read involving a dirty remote cluster takes about 80
+processor clocks against about 61 for a clean remote
+read~\cite[\S4.2, Fig.~6]{lenoski1990dash}. MESIF cuts a read of a line held in E, M
+or F to two hops but offers ``no benefits over the 3-hop protocols'' for lines in I
+or S~\cite[\S3]{goodman2009mesif}. TokenB answers in two hops but reissues 3.0\,\%
+of misses~\cite[\S6]{martin2003token}. The state and storage costs are in row~10 of
+\cref{tab:matrix}: three bits per line plus the \textsc{DI} and \textsc{CH} signals
+for MOESI~\cite[p.~416]{sweazey1986moesi}, a 17-bit entry per block for 16-cluster
+DASH~\cite[\S3]{lenoski1990dash}, and $2+\log_2T$ bits plus a persistent-request table of 8 bytes per arbiter
+for tokens~\cite[\S3.1--3.2]{martin2003token}.
+
+Removing a memory writeback does not by itself reduce total traffic or execution
+time. The saved bytes can be replaced by update traffic (Dragon), kept alongside it
+(Firefly) or traded for broadcast requests (TokenB), and saved traffic becomes
+saved time only when the interconnect or memory was the bottleneck
+(\cref{fig:bus-util}). MOESI-prime is the clearest published case: it removed MESI's
+downgrade writebacks and reached its goal of fewer DRAM row activations, while
+execution time changed by between $-0.51\,\%$ and
+$+0.61\,\%$~\cite{loughlin2022moesiprime}.
+
+\Cref{tab:evaluations} lists the comparative studies we found. Their set-ups range
+from a synthetic single-bus model and queueing analysis to full-system simulation of
+commercial workloads and gem5 runs with different protocol implementations, so
+their numbers cannot be compared with each other and we do not compare them.
+Stenstr{\"o}m~\cite{stenstrom1990survey} surveys hardware and software coherence
+schemes of the same period. Two points matter for this report. The only early study
+that compared an ownership protocol with an invalidate protocol under identical
+conditions, Archibald and Baer, compared whole protocols: Berkeley and Illinois
+differ both in having \stE\ and in ownership (\cref{tab:berkeley-states}), so the
+effect of ownership alone cannot be read from their
+results~\cite{archibald1986evaluation}. And the recent gem5 studies compare
+implementations that differ in many ways; in the case reported by Mallya et al.\
+the MOESI implementation did not share dirty data on our
+transaction~\cite{mallya2015simulation}.
+
+\begin{table}[htbp]
+\centering
+\caption{Published comparative evaluations relevant to the forced writeback.}
+\label{tab:evaluations}
+\scriptsize
+\begin{tabular}{@{}L{1.75cm} L{2.0cm} L{2.0cm} L{2.15cm} L{2.6cm} L{2.0cm}@{}}
+\toprule
+Study & Protocols & Method and system & Workload, metric & Principal finding &
+  Isolates the O state? \\
+\midrule
+Archibald {\&} Baer 1986~\cite{archibald1986evaluation} & Write-once, Synapse,
+  Berkeley, Illinois, Firefly, Dragon & simulation; one bus; 1--15 processors &
+  synthetic streams; ``system power'' & update best for shared data; Berkeley
+  beats Illinois at high sharing (p.~295) & no: whole protocols differ \\
+Yang et al.\ 1989~\cite{yang1989analysis} & the six above and write-through &
+  queueing model (MVA); packet-switched bus & analytical & full text not
+  consulted & --- \\
+Martin et al.\ 2003~\cite{martin2003token} & TokenB, snooping, directory,
+  Hammer & Simics full system; 16 processors & OLTP, Apache, SPECjbb; runtime,
+  traffic & TokenB faster; directory 21--25\,\% less traffic & no: organisations
+  compared \\
+Goodman {\&} Hum 2009~\cite{goodman2009mesif} & MESIF vs.\ 3-hop & in-house MVA,
+  undisclosed & projection & 6--11\,\% (4 nodes) & no \\
+Mallya et al.\ 2015~\cite{mallya2015simulation} & MI, MESI, MOESI & gem5 Ruby;
+  2--4 nodes & SPLASH-2; misses, energy & MESI better in some cases & no:
+  different gem5 protocols \\
+Loughlin et al.\ 2022~\cite{loughlin2022moesiprime} & MESI, MOESI, MOESI-prime &
+  gem5; 2--8 nodes & PARSEC, SPLASH-2x; row activations & MOESI removes downgrade
+  writebacks; runtime within $\pm0.61\,\%$ & not established \\
+Fagundes {\&} Souza 2024~\cite{fagundes2024evaluation} & MESI, MOESI & gem5 full
+  system; 4, 8 cores & one OpenMP kernel ($\pi$) & MOESI better, less so with
+  larger L2 & no \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------
+\section{Research Gap and Motivation for Our Contribution}
+\label{sec:cmp-gap}
+\sectionmap{[Gap [What the literature establishes] [Table D]
+  [Open 1: isolate the O state] [Open 2: predict the benefit]]}
+\index{MESI}\index{MOESI}\index{Owned state}\index{sharing patterns!migratory}\index{gem5}%
+
+The sources establish four points. Ownership protocols let modified data be shared
+without updating memory and stay coherent~\cite{sweazey1986moesi,archibald1986evaluation},
+so the timing of the memory update is a design choice. Different approaches trade
+memory traffic, interconnect traffic and hardware state against one another
+(\cref{tab:traffic-patterns,tab:p2p}). And the benefit of each depends on the
+workload's sharing
+behaviour~\cite[p.~295]{archibald1986evaluation}\cite{fagundes2024evaluation,loughlin2022moesiprime}.
+\Cref{tab:matrix} judges every approach against the requirements of Chapter~10.
+
+\begin{table}[htbp]
+\centering
+\caption{Table D: every approach against the requirements of Chapter~10.
+DA: directly addresses; PA: partially addresses; RP: addresses a related
+problem; OR: orthogonal; NE: not established by the available source.}
+\label{tab:matrix}
+\scriptsize
+\begin{tabular}{@{}L{2.05cm} L{1.4cm} L{1.4cm} L{1.4cm} L{1.4cm} L{1.4cm} L{1.4cm} L{1.4cm}@{}}
+\toprule
+Criterion & MOESI & Berkeley & Dragon & Firefly & MESIF & Directory (DASH) & Token \\
+\midrule
+1 Completion & yes$^{a}$ & yes$^{a}$ & yes$^{a}$ & yes$^{a}$ & yes$^{a}$ & yes$^{a}$ & yes$^{a}$ \\
+2 Order & yes$^{a}$ & yes$^{a}$ & yes$^{a}$ & yes$^{a}$ & yes$^{a}$ & yes$^{a}$ & yes$^{a}$ \\
+3 Removes the immediate forced WB & DA: deferred & DA: deferred & DA: deferred &
+  no: retained & PA: by migration & no: sharing WB & DA (inferred) \\
+4 Keeps silent E$\to$M & yes & no: no E & yes (VE) & yes (VE) & E present; NE &
+  OR: no E state & NE \\
+5 Shares modified data & yes & yes & yes & no & no; FM proposed & no & yes \\
+6 Explicit ownership & yes & yes & yes & no & no & dirty owner only & yes \\
+7 Extra control traffic & none over MESI & invalidation on first write &
+  update per shared write & update per shared write & home acks (IACK, CNCL,
+  DACK) & forward + acks & broadcast; 3\,\% reissue \\
+8 Extra data traffic & none & none & none & none & producer re-fetch (our
+  analysis) & sharing WB & none (inferred) \\
+9 Memory bandwidth & lower & lower & lower & higher & NE & as MESI & lower
+  (inferred) \\
+10 Hardware & 3 bits; DI, CH & 2 bits; interlocks & update path & update path;
+  MShared & 3 bits; 3 VCs & 17 bits per block & $2+\log_2T$ bits \\
+11 Scalability & bus-based as published & bus-based & bus-based & bus-based &
+  point-to-point & scalable & unordered; broadcast \\
+12 Workload sensitivity & high-sharing gains & high-sharing gains & writes per
+  read & writes per read & E, M, F hits only & NE & commercial only \\
+\bottomrule
+\multicolumn{8}{@{}p{12.6cm}@{}}{\footnotesize $^{a}$As published; each
+protocol is presented by its authors as coherent. Formal verification is
+outside the scope of this report (\cref{sec:prob-scope}).}
+\end{tabular}
+\end{table}
+
+Two questions remain open, and Part~IV takes them up.
+
+\paragraph{Isolating the effect of the Owned state.} None of the studies in
+\cref{tab:evaluations} compares MESI and MOESI with \stO\ as the only difference.
+The early comparison varied whole protocols, and the gem5 comparisons used
+implementations that differ in many states and transitions, in one case without
+the \stM$\to$\stO\ transition at all. We do not claim that no such study exists
+anywhere, only that the studies we found do not provide one, so their results
+cannot be credited to the \stO\ state alone. Part~IV therefore builds a controlled
+simulator in which MESI and MOESI share every component and setting, leaving the
+\stM$\to$\stO\ behaviour as the single changed variable.
+
+\paragraph{Predicting the benefit from MESI behaviour.} The sources agree that the
+benefit of ownership depends on sharing, and Archibald and Baer parameterise their
+model by the fraction of references to shared
+blocks~\cite[p.~286]{archibald1986evaluation}. Detecting sharing patterns is also
+known: adaptive protocols classify blocks as migratory at run time and change how
+they handle them~\cite{stenstrom1993adaptive}, using rules such as spotting a write
+by a processor other than the last writer~\cite{nilsson1994adaptive}. We did not
+find a workload measure, taken under MESI, that has been proposed and tested as a
+predictor of the gain from moving to MOESI. Part~IV defines the Dirty Sharing
+Ratio, the fraction of coherence transactions in which a read is served by a cache
+holding the block in \stM, for this purpose. It differs from adaptive detection in
+being an offline characterisation used to choose a protocol, rather than a run-time
+mechanism inside one.

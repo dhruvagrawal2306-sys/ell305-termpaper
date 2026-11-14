@@ -1,0 +1,365 @@
+% ===============================================================
+%  Chapter 5 -- The MSI Family: MSI, MESI and MOESI      (Part I)
+% ===============================================================
+\chapter{The MSI Family: MSI, MESI and MOESI}
+\label{ch:msi-family}
+\index{MESI}\index{MOESI}\index{MSI}%
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  chapter map,
+  [Chapter 5
+    [Events {\&} messages [Processor events] [Bus messages]]
+    [MSI [Three states] [Two state diagrams]]
+    [MESI [Adds Exclusive] [Silent upgrade]]
+    [MOESI [Adds Owned] [Read-miss decision tree]]
+    [A worked trace [Same accesses in all three] [The family at a glance]]
+  ]
+\end{forest}}
+\caption[]{Structure of Chapter~5. Each protocol is given
+in the same order (states, transitions on processor events, transitions on
+messages from other caches) so the three can be compared line by line.}
+\label{fig:ch5-map}
+\end{figure}
+
+This chapter describes what each of the three protocols does. Which one costs
+less is the subject of Parts~II and~III.
+
+% ---------------------------------------------------------------
+\section{Events and Messages}
+\label{sec:fam-events}
+\sectionmap{[Vocabulary [Processor events: read write evict]
+  [Bus messages: readmiss writemiss write] [Responses: data and write back]
+  [Hits change nothing]]}
+\index{write-invalidate}\index{Sarangi textbook}%
+
+The three protocols react to the same events and use the message names of
+Sarangi's write-invalidate protocol~\cite[\S12.4.6]{sarangi2025basic}
+(\cref{tab:events}). Read hits in any valid state and write hits in \stM\ change
+no state and send no message, so the diagrams leave them out.
+
+\begin{table}[htbp]
+\centering
+\caption{Events and messages used by the MSI family.}
+\label{tab:events}
+\small
+\begin{tabular}{@{}l l p{7.6cm}@{}}
+\toprule
+Kind & Name & Meaning \\
+\midrule
+Processor event & read / write & the local core loads or stores the block \\
+ & evict & the local cache removes the block to make room \\
+\midrule
+Bus message & \textit{readmiss} & another cache wants to read a block it does not hold \\
+ & \textit{writemiss} & another cache wants to write a block it does not hold \\
+ & \textit{write} & another cache holds the block and is about to write it
+   (an upgrade); other copies must be invalidated \\
+\midrule
+Response & \textit{send data} & a cache supplies the block to the requester \\
+ & \textit{write back} & a cache writes the block to the lower level \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------
+\section{MSI: Three States}
+\label{sec:fam-msi}
+\sectionmap{[MSI [M: only copy and modified] [S: read-only and clean]
+  [I: not present] [One writer or many readers]]}
+\index{MSI}\index{write-invalidate}\index{Sarangi textbook}%
+
+The basic write-invalidate protocol, \gls{msi}\index{MSI}, has three states per
+block~\cite[\S12.4.6]{sarangi2025basic}:
+
+\begin{description}
+  \item[\stM\ (Modified).] This cache may write the block. No other cache
+    holds a valid copy. The data differs from memory.
+  \item[\stS\ (Shared).] This cache may read but not write the block. Other
+    caches may hold \stS\ copies too. The data matches memory.
+  \item[\stI\ (Invalid).] The cache holds no valid copy.
+\end{description}
+
+\Cref{fig:msi} redraws Sarangi's two diagrams: transitions caused by the local
+processor (his Fig.~12.13) and transitions caused by messages from other caches
+(his Fig.~12.14). The red transition in part~(b) comes up again and again in this
+report. When another cache reads a block held in \stM, this cache sends the data,
+writes the block back to the lower level, and moves to \stS.
+
+\tikzset{
+  fsm/.style={font=\sffamily\small, >=Stealth, node distance=2cm},
+  st/.style={draw, thick, circle, minimum size=1.05cm, font=\sffamily\bfseries},
+  stB/.style={st, fill=mesiBlue!14, draw=mesiBlue},
+  stO/.style={st, fill=moesiOrange!14, draw=moesiOrange},
+  stT/.style={st, fill=tealC!16, draw=tealC},
+  tr/.style={->, thick, slateC},
+  bus/.style={->, thick, dashed, plumC},
+  key/.style={->, very thick, alertRed},
+  good/.style={->, very thick, memGreen},
+  lb/.style={font=\sffamily\tiny, fill=white, inner sep=1pt, align=center},
+}
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}
+\begin{tikzpicture}[fsm]
+  \node[font=\sffamily\bfseries\small] at (2.4,4.2) {(a) Processor events};
+  \node[stT] (I) at (0,0) {\stI};
+  \node[stT] (S) at (4.8,0) {\stS};
+  \node[stT] (M) at (2.4,3.0) {\stM};
+  \draw[tr] (I) to[bend right=18] node[lb, below]{read / readmiss} (S);
+  \draw[tr] (S) to[bend right=18] node[lb, above]{evict / ---} (I);
+  \draw[tr] (I) to[bend left=12] node[lb, left=2pt]{write /\\writemiss} (M);
+  \draw[tr] (M) to[bend left=12] node[lb, right=1pt]{evict /\\write back} (I);
+  \draw[tr] (S) -- node[lb, right=3pt]{write /\\write} (M);
+  \begin{scope}[xshift=7.4cm]
+  \node[font=\sffamily\bfseries\small] at (2.4,4.2) {(b) Messages from other caches};
+  \node[stT] (I2) at (0,0) {\stI};
+  \node[stT] (S2) at (4.8,0) {\stS};
+  \node[stT] (M2) at (2.4,3.0) {\stM};
+  \draw[bus] (S2) -- node[lb, below]{write, writemiss / ---} (I2);
+  \draw[bus] (M2) -- node[lb, left=2pt]{writemiss /\\send data} (I2);
+  \draw[key] (M2) -- node[lb, right=3pt, text=alertRed]{readmiss /\\send data\\+ \textbf{write back}} (S2);
+  \end{scope}
+\end{tikzpicture}
+\end{bigfig}
+\caption[MSI state diagrams]{The MSI protocol, redrawn from Sarangi's
+Figs.~12.13 and~12.14~\cite[\S12.4.6]{sarangi2025basic}. Solid arrows are caused
+by the local processor and dashed purple arrows by messages from other caches. The
+red transition writes the block back when another cache reads it.}
+\label{fig:msi}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{MESI: Adding an Exclusive State}
+\label{sec:fam-mesi}
+\sectionmap{[MESI [Read of unshared data enters E] [E is clean and the only copy]
+  [E to M needs no message] [Origin: Illinois protocol 1984]]}
+\index{MESI}\index{MSI}\index{Exclusive state}\index{Illinois protocol}\index{Sarangi textbook}%
+
+When a core reads a block that no other cache holds, such as its own stack
+data, MSI still puts the block in \stS\ because it cannot tell that this is the
+only copy. When the core then writes the block, the cache has to send a
+\textit{write} message to invalidate copies that do not exist.
+\Gls{mesi}\index{MESI} adds a fourth state for this case~\cite{papamarcos1984illinois}:
+
+\begin{description}
+  \item[\stE\ (Exclusive).] No other cache has a copy and the data matches
+    memory. The cache may read the block and may move it to \stM\ on a write
+    without sending any message, since no other cache needs to know.
+\end{description}
+
+On a read miss the other caches report whether any of them holds the block, for
+example by asserting a ``shared'' line on the bus. If none does, the block enters
+\stE\ instead of \stS. Sarangi introduces this state and leaves ``implementing
+the MESI protocol\,\ldots as an exercise for the
+reader''~\cite[\S12.4.6, p.~603]{sarangi2025basic}; \cref{fig:mesi} is our
+solution.
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{tikzpicture}[fsm]
+  \node[font=\sffamily\bfseries\small] at (2.9,4.1) {(a) Processor events};
+  \node[stB] (I) at (0,1.5) {\stI};
+  \node[stB] (E) at (2.9,3.2) {\stE};
+  \node[stB] (S) at (2.9,-0.2) {\stS};
+  \node[stB] (M) at (5.8,1.5) {\stM};
+  \draw[tr] (I) -- node[lb, above left=-1pt]{read, no copies /\\readmiss} (E);
+  \draw[tr] (I) -- node[lb, below left=-1pt]{read, copies exist /\\readmiss} (S);
+  \draw[tr] (I) to[bend left=9] node[lb, above, pos=0.62]{write / writemiss} (M);
+  \draw[tr] (M) to[bend left=9] node[lb, below, pos=0.62]{evict / write back} (I);
+  \draw[good] (E) -- node[lb, above right=-1pt, text=memGreen]{write / ---\\\textbf{(silent)}} (M);
+  \draw[tr] (S) -- node[lb, below right=-1pt]{write / write} (M);
+  \node[lb, text=coreGrey, anchor=west] at (-0.4,-1.0) {Evict from \stE\ or \stS: silent, to \stI.};
+  \begin{scope}[xshift=7.7cm, yshift=0.4cm]
+  \node[font=\sffamily\bfseries\small] at (2.8,3.8) {(b) Messages from other caches};
+  \node[stB] (E2) at (0,2.4) {\stE};
+  \node[stB] (S2) at (2.8,2.4) {\stS};
+  \node[stB] (M2) at (5.6,2.4) {\stM};
+  \node[stB] (I2) at (2.8,-0.4) {\stI};
+  \draw[bus] (E2) -- node[lb, above=3pt]{readmiss /\\send data} (S2);
+  \draw[key] (M2) -- node[lb, above=3pt, text=alertRed]{readmiss / send data\\+ \textbf{write back}} (S2);
+  \draw[bus] (E2) -- node[lb, left=2pt, pos=0.45]{writemiss /\\send data} (I2);
+  \draw[bus] (S2) -- node[lb, pos=0.45]{write,\\writemiss / ---} (I2);
+  \draw[bus] (M2) -- node[lb, right=2pt, pos=0.45]{writemiss /\\send data} (I2);
+  \end{scope}
+\end{tikzpicture}}
+\caption[MESI state diagrams]{The MESI protocol. The green transition is what
+MESI adds: a block in \stE\ moves to \stM\ silently. The red transition is the
+same as in MSI, so a remote read of an \stM\ block still causes a write back.}
+\label{fig:mesi}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{MOESI: Adding an Owned State}
+\label{sec:fam-moesi}
+\label{sec:fam-readmiss}
+\sectionmap{[MOESI [O: modified but shared] [Owner supplies data]
+  [Owner is responsible for write back] [Origin: Futurebus 1986]]}
+\index{MESI}\index{MOESI}\index{Owned state}\index{snooping protocol}\index{Futurebus}\index{owner}%
+
+\Gls{moesi}\index{MOESI} adds a fifth state to MESI~\cite{sweazey1986moesi}:
+
+\begin{description}
+  \item[\stO\ (Owned).] The copy is modified, so memory is stale, but other
+    caches may hold the same data in \stS. The owning cache answers every request
+    for the block and must write it back to memory when it evicts it.
+\end{description}
+
+The only change from MESI is the red transition of \cref{fig:mesi}. In MOESI, when
+another cache reads a block held in \stM, the holder sends the data and moves to
+\stO\ without writing back (\cref{fig:moesi}). An \stS\ copy may then differ from
+memory, because the latest data is in the \gls{owner}\index{owner}, and the owner
+must write the block back when it evicts it, as an \stM\ block must.
+\Cref{fig:readmiss-tree} shows how a snooping system serves a read miss under both
+protocols. They agree on every branch except the last.
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  decision tree,
+  [Read miss: does another\\cache hold the block?
+    [Requester enters E\\data from memory, el=no]
+    [Is that copy\\in M or O?, el=yes
+      [Requester enters S\\any E copy drops to S, el=no]
+      [Which protocol?, el=yes
+        [MESI: owner sends data\\writes back and enters S, el=MESI]
+        [MOESI: owner sends data\\enters or stays in O\\no write back, el=MOESI]]]]
+\end{forest}}
+\caption[Decision tree: serving a read miss]{How a read miss is served in MESI
+and MOESI. The protocols differ only in the bottom row, where a cache holding
+modified data is read by another cache.}
+\label{fig:readmiss-tree}
+\end{figure}
+
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}
+\begin{tikzpicture}[fsm]
+  \node[font=\sffamily\bfseries\small, anchor=west] at (-0.5,3.2) {(a) Processor events: the two transitions new in MOESI};
+  \node[stO] (M) at (1.9,2.0) {\stM};
+  \node[stO] (O) at (3.8,0) {\stO};
+  \node[stO] (I) at (0,0) {\stI};
+  \draw[tr] (O) -- node[lb, right=2pt]{write /\\write} (M);
+  \draw[tr] (O) -- node[lb, below]{evict / write back} (I);
+  \node[lb, text=coreGrey, align=left, anchor=west] at (5.0,1.0)
+       {All other processor-side transitions are\\exactly as in MESI (\cref{fig:mesi}a).};
+  \begin{scope}[yshift=-5.6cm]
+  \node[font=\sffamily\bfseries\small, anchor=west] at (-0.5,3.9) {(b) Messages from other caches};
+  \node[stO] (E2) at (0,2.4) {\stE};
+  \node[stO] (S2) at (3.0,2.4) {\stS};
+  \node[stO] (M2) at (6.0,2.4) {\stM};
+  \node[stO] (O2) at (9.0,2.4) {\stO};
+  \node[stO] (I2) at (4.5,-0.6) {\stI};
+  \draw[bus] (E2) -- node[lb, above=3pt]{readmiss /\\send data} (S2);
+  \draw[good] (M2) -- node[lb, above=3pt, text=memGreen]{readmiss / send data\\\textbf{no write back}} (O2);
+  \draw[bus] (O2) to[loop right, looseness=5] node[lb, right]{readmiss /\\send data} (O2);
+  \draw[bus] (E2) -- node[lb, left=3pt, pos=0.5]{writemiss / send data} (I2);
+  \draw[bus] (S2) -- node[lb, pos=0.45]{write,\\writemiss / ---} (I2);
+  \draw[bus] (M2) -- node[lb, pos=0.45]{writemiss /\\send data} (I2);
+  \draw[bus] (O2) -- node[lb, right=3pt, pos=0.5]{write, writemiss / send data if asked} (I2);
+  \end{scope}
+\end{tikzpicture}
+\end{bigfig}
+\caption[MOESI state diagrams]{The MOESI protocol. Part~(a) shows only the two
+processor-side transitions that MOESI adds. In part~(b) the green transition
+replaces MESI's red one: the cache with modified data supplies it and moves to
+\stO\ without writing back, and then answers every later read miss itself (the
+loop on \stO).}
+\label{fig:moesi}
+\end{figure}
+
+Some combinations of states in different caches would break coherence, so each
+protocol allows only certain pairs for the same block. \Cref{tab:compat} gives the
+rule for MOESI. The one new pair is $(\stO,\stS)$, which is modified data that is
+also shared.
+
+\begin{table}[htbp]
+\centering
+\caption{Which states two caches may hold for the same block at the same time
+in MOESI ($\checkmark$ = allowed). Removing the \stO\ row and column gives the
+rule for MESI.}
+\label{tab:compat}
+\small
+\begin{tabular}{@{}c|ccccc@{}}
+ & \stM & \stO & \stE & \stS & \stI \\
+\hline
+\stM & $\times$ & $\times$ & $\times$ & $\times$ & \checkmark \\
+\stO & $\times$ & $\times$ & $\times$ & \checkmark & \checkmark \\
+\stE & $\times$ & $\times$ & $\times$ & $\times$ & \checkmark \\
+\stS & $\times$ & \checkmark & $\times$ & \checkmark & \checkmark \\
+\stI & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------
+\section{A Worked Trace}
+\label{sec:fam-trace}
+\sectionmap{[Worked trace [Three cores and one block] [Six accesses]
+  [States in MSI MESI MOESI] [E appears at step 1] [O appears at step 3]]}
+\index{MESI}\index{MOESI}\index{MSI}\index{Owned state}\index{Exclusive state}\index{owner}%
+
+\Cref{tab:trace} follows one block through six accesses by three cores under
+each protocol. The block starts in no cache.
+
+\begin{table}[htbp]
+\centering
+\caption{One block, six accesses, three protocols. Cells give the states in
+P0 / P1 / P2 after each step.}
+\label{tab:trace}
+\small
+\begin{tabular}{@{}c l c c c@{}}
+\toprule
+Step & Access & MSI & MESI & MOESI \\
+\midrule
+1 & P0 reads  & S / I / I & \textbf{E} / I / I & \textbf{E} / I / I \\
+2 & P0 writes & M / I / I & M / I / I & M / I / I \\
+3 & P1 reads  & S / S / I & S / S / I & \textbf{O} / S / I \\
+4 & P2 reads  & S / S / S & S / S / S & \textbf{O} / S / S \\
+5 & P1 writes & I / M / I & I / M / I & I / M / I \\
+6 & P0 reads  & S / S / I & S / S / I & S / \textbf{O} / I \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+At step~1 MESI and MOESI put the block in \stE, since no other cache holds it;
+MSI has no such state. At step~2 the move to \stM\ is silent in MESI and MOESI
+and costs a bus \textit{write} in MSI. At steps~3, 4 and~6 MOESI keeps the
+modified data in an owner (\stO), while MSI and MESI fall back to all-\stS. At
+step~5 ownership passes to the new writer, and P0's \stO\ copy is invalidated
+because P1's write makes it out of date.
+
+\label{sec:fam-glance}
+\Cref{tab:family} describes every state of the family by four properties and
+shows which protocol uses it.
+
+\begin{table}[htbp]
+\centering
+\caption{Every state of the MSI family.}
+\label{tab:family}
+\small
+\begin{tabular}{@{}c c c c c c c c@{}}
+\toprule
+State & Valid & Differs from & Only & Responsible for & \multicolumn{3}{c}{Used in} \\
+\cmidrule(l){6-8}
+ & & memory & copy & write back & MSI & MESI & MOESI \\
+\midrule
+\stM & yes & yes & yes & yes & \checkmark & \checkmark & \checkmark \\
+\stO & yes & yes & no  & yes &            &            & \checkmark \\
+\stE & yes & no  & yes & no  &            & \checkmark & \checkmark \\
+\stS & yes & no$^{*}$ & no & no & \checkmark & \checkmark & \checkmark \\
+\stI & no  & --- & --- & no  & \checkmark & \checkmark & \checkmark \\
+\midrule
+\multicolumn{5}{@{}l}{Bits of state per block} & 2 & 2 & 3 \\
+\bottomrule
+\multicolumn{8}{@{}l}{\footnotesize $^{*}$ In MOESI, an \stS\ copy may differ
+from memory when another cache holds the block in \stO.}
+\end{tabular}
+\end{table}
+
+MESI is therefore MSI with the clean, unshared case taken out of \stS\ and given
+its own state \stE, and MOESI is MESI with a dirty, shared case added as \stO.

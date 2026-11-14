@@ -1,0 +1,254 @@
+% ===============================================================
+%  Chapter 4 -- How Cache Coherence Is Maintained        (Part I)
+% ===============================================================
+\chapter{How Cache Coherence Is Maintained}
+\label{ch:coherence-basics}
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  chapter map,
+  [Chapter 4
+    [What coherence means [Completion {\&} order axioms] [Not consistency]]
+    [Block states [Event / action]]
+    [Snooping and directories [Bus orders messages] [Sharer list]]
+    [Update vs invalidate [Decision tree]]
+  ]
+\end{forest}}
+\caption[]{Structure of Chapter~4: what a coherence
+protocol must guarantee, then the parts every protocol is built from.}
+\label{fig:ch4-map}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{What Coherence Means}
+\label{sec:coh-meaning}
+\label{sec:coh-order}
+\label{sec:coh-consistency}
+\sectionmap{[Coherence [Concerns one address] [Completion: no write is lost]
+  [Order: one order for all threads] [{Consistency: a separate question}]]}
+\index{coherence axioms}\index{memory consistency}\index{Sarangi textbook}%
+
+To a program, a set of private caches has to look like one cache. Sarangi states
+the requirement in terms of the accesses to a single
+address~\cite[\S12.4.2, Def.~122]{sarangi2025basic}\index{coherence axioms}:
+
+\begin{keybox}[The two axioms of coherence]
+\emph{Completion}: a write must eventually complete, and the memory system may
+never lose it.\\[3pt]
+\emph{Order}: all threads see the writes to one address in the same order.
+\end{keybox}
+
+However many copies of a location the machine holds, it must behave like a single
+location whose value changes in one agreed sequence. \Cref{fig:order-example}
+draws Sarangi's example of the order axiom~\cite[\S12.4.2, Ex.~151]{sarangi2025basic}.
+Thread~1 writes \texttt{x=1} and then \texttt{x=2}, and thread~2 reads \texttt{x}
+twice. Every pair of results can occur except $(2,1)$, which would mean thread~2
+saw the second write before the first. A coherence protocol is the hardware that
+enforces both axioms for every block in every cache.
+
+Coherence says nothing about writes to different addresses. Whether another
+thread may see a new value of \texttt{y} together with an old value of \texttt{x}
+after thread~1 wrote \texttt{x} and then \texttt{y} is a question of memory
+consistency~\cite[\S12.4.3]{sarangi2025basic}. We keep the consistency model fixed
+and study coherence only.
+
+% ---------------------------------------------------------------
+\section{Block States and State Machines}
+\label{sec:coh-fsm}
+\sectionmap{[States [Each cached block has a state] [Events cause transitions]
+  [Written as event / action]]}
+
+All the protocols in this report work the same way. Every block in every cache
+has a small state stored next to its tag, and the cache controller runs a finite
+state machine for each block. When an event arrives, the controller performs an
+action and may move the block to a new state~\cite[\S12.4.6]{sarangi2025basic}.
+Events come either from the cache's own processor (read, write, evict) or from
+other caches through the interconnect (\cref{fig:fsm-notation}). A block that is
+not in the cache counts as Invalid.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[c]{0.5\linewidth}\centering
+\adjustbox{max width=\linewidth}{%
+\begin{tikzpicture}[font=\sffamily\small]
+  \node[font=\sffamily\bfseries, text=tealC!80!black] at (0,2.0) {Thread 1};
+  \node[font=\sffamily\bfseries, text=plumC] at (5.6,2.0) {Thread 2};
+  \node[draw=tealC, fill=tealC!10, rounded corners=2pt] at (0,1.35) {\texttt{x = 1}};
+  \node[draw=tealC, fill=tealC!10, rounded corners=2pt] at (0,0.7) {\texttt{x = 2}};
+  \node[draw=plumC, fill=plumC!10, rounded corners=2pt] at (5.6,1.35) {\texttt{t1 = x}};
+  \node[draw=plumC, fill=plumC!10, rounded corners=2pt] at (5.6,0.7) {\texttt{t2 = x}};
+  \draw[-{Stealth}, thick, amberC] (0.8,1.35) to[out=-15,in=195] (4.65,1.35);
+  \draw[-{Stealth}, thick, amberC] (0.8,0.7) to[out=-15,in=195] (4.65,0.7);
+  \draw[thick, coreGrey!40] (-1.0,0.15) -- (6.6,0.15);
+  \node[text=leafC!80!black, align=center] at (2.8,-0.5) {Allowed: $(0,0)$, $(0,1)$, $(0,2)$,\\$(1,1)$, $(1,2)$, $(2,2)$};
+  \node[text=brickC] at (2.8,-1.25) {Forbidden: $(2,1)$, writes seen out of order};
+\end{tikzpicture}}
+\caption[The order axiom]{The order axiom: only $(2,1)$ is impossible.}
+\label{fig:order-example}
+\end{minipage}\hfill
+\begin{minipage}[c]{0.45\linewidth}\centering
+\adjustbox{max width=\linewidth}{%
+\begin{tikzpicture}[font=\sffamily\small, >=Stealth,
+    st/.style={draw, thick, circle, minimum size=1.2cm, font=\sffamily\bfseries}]
+  \node[st, fill=skyC!16, draw=skyC] (A) at (0,0) {A};
+  \node[st, fill=leafC!16, draw=leafC] (B) at (5,0) {B};
+  \draw[->, thick] (A) -- node[above]{\textit{event} / \textit{action}} (B);
+  \node[draw, thick, rounded corners=2pt, fill=slateC!12, draw=slateC, align=center, font=\sffamily\scriptsize]
+       (p) at (-0.2,-2.0) {from this cache's processor:\\read, write, evict};
+  \node[draw, thick, rounded corners=2pt, fill=plumC!12, draw=plumC, align=center, font=\sffamily\scriptsize]
+       (o) at (5.2,-2.0) {from other caches:\\read miss, write miss};
+  \draw[->, thick, slateC] (p) -- (2.3,-0.25);
+  \draw[->, thick, plumC] (o) -- (2.7,-0.25);
+\end{tikzpicture}}
+\caption[State-machine notation]{Notation for every protocol in this report.}
+\label{fig:fsm-notation}
+\end{minipage}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{Snooping and Directory Protocols}
+\label{sec:coh-snoop}
+\label{sec:coh-dir}
+\sectionmap{[Organisation [Snooping: every cache watches the bus]
+  [Bus order gives the order axiom] [Directory: sharer list per block]]}
+\index{snooping protocol}\index{directory protocol}\index{coherence axioms}%
+
+In a \gls{snoop}\index{snooping protocol} all private caches sit on one shared bus.
+One cache puts a message on the bus at a time and every other cache reads
+it~\cite[\S12.4.6]{sarangi2025basic}. Each controller watches (snoops) the bus and
+reacts to messages about blocks it holds. An arbiter grants the bus to requesters
+in FIFO order~\cite[\S13.4.3]{sarangi2025basic} (\cref{fig:snoop-bus}). Since only
+one cache transmits at a time, all caches see all messages in the same order, and
+the order axiom holds automatically~\cite[\S12.4.6]{sarangi2025basic}. One
+consequence is easy to miss. A cache that wants to write must wait for its own
+request to appear on the bus before updating its copy. If it wrote first, two
+caches writing at the same moment could each apply their own write first and see
+the two writes in opposite orders~\cite[\S12.4.6, Question~8]{sarangi2025basic}.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[c]{0.55\linewidth}\centering
+\adjustbox{max width=\linewidth}{%
+\begin{tikzpicture}[font=\sffamily\scriptsize,
+    cpu/.style={draw, thick, rounded corners=2pt, fill=slateC!14, draw=slateC,
+                minimum width=1.4cm, minimum height=0.55cm},
+    cache/.style={draw, thick, rounded corners=2pt, minimum width=1.9cm,
+                  minimum height=0.5cm}]
+  \foreach \i/\c in {0/tealC,1/plumC,2/amberC,3/leafC} {
+    \node[cpu] (c\i) at (\i*2.4,2.3) {P\i};
+    \node[cache, fill=\c!15, draw=\c] (h\i) at (\i*2.4,1.5) {L1 + snooper};
+    \draw[thick] (c\i) -- (h\i); \draw[thick] (h\i) -- (\i*2.4,0.8);
+  }
+  \draw[line width=2pt, slateC] (-1.0,0.8) -- (8.2,0.8);
+  \node[text=slateC, anchor=south east] at (8.2,0.85) {shared bus};
+  \node[draw, thick, rounded corners=2pt, fill=brickC!12, draw=brickC,
+        minimum width=2.2cm, align=center] (arb) at (1.2,-0.45) {Arbiter\\FIFO queue};
+  \draw[thick, brickC, <->] (arb) -- (1.2,0.8);
+  \node[draw, thick, rounded corners=2pt, fill=leafC!14, draw=leafC,
+        minimum width=2.4cm] (mem) at (6.0,-0.45) {Lower level / memory};
+  \draw[thick] (mem) -- (6.0,0.8);
+\end{tikzpicture}}
+\caption[A snooping system]{Four private caches on a shared bus. The arbiter
+lets one cache transmit at a time.}
+\label{fig:snoop-bus}
+\end{minipage}\hfill
+\begin{minipage}[c]{0.42\linewidth}\centering
+\adjustbox{max width=\linewidth}{%
+\begin{tikzpicture}[font=\sffamily\scriptsize,
+    cache/.style={draw, thick, rounded corners=2pt, minimum width=1.3cm, minimum height=0.5cm}]
+  \foreach \i/\c in {0/tealC,1/slateC,2/plumC,3/plumC} { \node[cache, fill=\c!14, draw=\c] (h\i) at (\i*1.7,2.2) {cache \i}; }
+  \node[draw, thick, rounded corners=2pt, fill=amberC!16, draw=amberC!90!black,
+        minimum width=3.0cm, minimum height=0.8cm] (d) at (2.55,0.4) {Directory};
+  \draw[-{Stealth}, thick, tealC] (h0) -- node[left, pos=0.4, text=tealC!80!black]{request} (d);
+  \draw[-{Stealth}, thick, plumC] (d) -- (h2);
+  \draw[-{Stealth}, thick, plumC] (d) -- node[right, pos=0.6, text=plumC]{forward} (h3);
+  \draw[dashed, coreGrey!50] (d) -- (h1);
+  \begin{scope}[xshift=0.3cm, yshift=-1.3cm]
+    \draw[thick, fill=slateC!10] (0,0) rectangle (1.4,0.6); \node at (0.7,0.3) {block addr.};
+    \draw[thick, fill=amberC!18] (1.4,0) rectangle (2.2,0.6); \node at (1.8,0.3) {state};
+    \foreach \b/\v in {0/0,1/0,2/1,3/1} {
+      \ifnum\v=1 \def\fc{plumC!30}\else\def\fc{white}\fi
+      \draw[thick, fill=\fc] (2.2+\b*0.45,0) rectangle +(0.45,0.6);
+      \node at (2.425+\b*0.45,0.3) {\v};
+    }
+    \node[text=coreGrey] at (3.1,-0.3) {sharer bit per cache};
+  \end{scope}
+\end{tikzpicture}}
+\caption[A directory protocol]{The directory forwards cache~0's request only to
+the recorded sharers, caches~2 and~3.}
+\label{fig:directory}
+\end{minipage}
+\end{figure}
+
+Broadcasting every request wastes bandwidth when only one or two caches hold the
+block. A \gls{directory}\index{directory protocol} keeps a record for each block of
+the caches that may hold a copy, usually one bit per
+cache~\cite[\S12.4.6]{sarangi2025basic}. Requests go to the directory, which
+forwards them only to the caches concerned (\cref{fig:directory}). Censier and
+Feautrier proposed the scheme in 1978~\cite{censier1978directory}.
+\Cref{tab:snoop-dir} sums up the trade-off.
+
+\begin{table}[htbp]
+\centering
+\caption{Snooping and directory organisations compared.}
+\label{tab:snoop-dir}
+\small
+\begin{tabular}{@{}l p{4.8cm} p{4.8cm}@{}}
+\toprule
+ & Snooping & Directory \\
+\midrule
+Who sees a request & every cache & only the recorded sharers \\
+Ordering of messages & provided by the bus & enforced by the directory \\
+Extra storage & none & a directory entry per block \\
+Interconnect & shared bus & any (ring, mesh, \ldots) \\
+Scales to & a small number of cores & many cores \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------
+\section{Write-Update and Write-Invalidate}
+\label{sec:coh-update-invalidate}
+\label{sec:coh-choose}
+\sectionmap{[Two strategies [Update: send new value to all copies]
+  [Invalidate: destroy other copies] [MSI family is write-invalidate]]}
+\index{MSI}\index{snooping protocol}\index{directory protocol}\index{write-update}\index{write-invalidate}\index{Dragon protocol}\index{Firefly protocol}\index{Sarangi textbook}%
+
+A protocol must also decide what happens to the other copies when one cache writes
+a block~\cite[\S12.4.6]{sarangi2025basic}. Under \gls{update}\index{write-update}
+the writer sends each new value out and every other copy is updated in place, so
+each write to shared data costs a message. Under
+\gls{invalidate}\index{write-invalidate} the writer first removes every other
+copy, after which it can write as often as it likes without further messages. At
+any moment a block then has either one writer or any number of readers. Sarangi
+justifies write-invalidate by noting that most blocks are not shared at the moment
+they are written. This choice is separate from the snooping-or-directory choice.
+The MSI family of Chapter~5 is write-invalidate and exists in both snooping and
+directory forms, while Dragon and Firefly (Part~III) are snooping write-update
+protocols. \Cref{fig:choose-tree} puts both choices into one decision tree. Real
+designs mix them, for example by snooping within a cluster and using a directory
+between clusters. From here on every protocol is write-invalidate unless stated
+otherwise.
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=0.8\linewidth}{%
+\begin{forest}
+  decision tree,
+  [Few cores sharing\\one bus?
+    [Snooping, el=yes
+      [Same core usually\\rewrites before\\others read?
+        [{Snooping +\\invalidate\\(MSI family)}, el=yes]
+        [{Snooping +\\update}, el=no]]]
+    [Directory, el=no
+      [Same core usually\\rewrites before\\others read?
+        [{Directory +\\invalidate}, el=yes]
+        [{Directory +\\update}, el=no]]]]
+\end{forest}}
+\caption[Decision tree: choosing a coherence organisation]{The two design
+questions of this chapter. Real programs usually answer the second question
+``yes'', which is why write-invalidate is the common choice.}
+\label{fig:choose-tree}
+\end{figure}

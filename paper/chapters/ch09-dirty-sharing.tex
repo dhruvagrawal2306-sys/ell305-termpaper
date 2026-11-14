@@ -1,0 +1,264 @@
+% ===============================================================
+%  Chapter 9 -- Forced Writebacks on Dirty Sharing       (Part II)
+% ===============================================================
+\chapter{Forced Writebacks on Dirty Sharing}
+\label{ch:dirty-sharing}
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  chapter map,
+  [Chapter 9
+    [The transaction [Three messages]]
+    [The root cause [S must be clean]]
+    [Wasted write backs [Superseded writes]]
+    [Sharing patterns [Four patterns] [Producer--consumer model]]
+  ]
+\end{forest}}
+\caption[]{Structure of Chapter~9: one transaction, the
+design rule behind it, and its cost in the sharing patterns where it occurs.}
+\label{fig:ch9-map}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{The Transaction}
+\label{sec:dirty-transaction}
+\sectionmap{[Transaction [Cache A holds M] [Cache B reads] [A sends data to B]
+  [A also writes back] [Both end in S]]}
+\index{MESI}\index{dirty sharing}%
+
+In this report \emph{dirty sharing}\index{dirty sharing} means one situation: a
+block is modified (dirty) in one cache and another cache reads it, so it becomes
+shared. \Cref{fig:dirty-transaction} shows what MESI does. The holder sends the
+data to the reader, writes the block back to memory, and both caches end in \stS.
+The reader needs the data, so the transfer cannot be avoided. This chapter is
+about the writeback.
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}[0.85]
+\begin{tikzpicture}[font=\sffamily\scriptsize,
+    ag/.style={draw, thick, rounded corners=2pt, minimum width=1.9cm,
+               minimum height=0.6cm, align=center, font=\sffamily\small},
+    msg/.style={-{Stealth}, thick}, st/.style={font=\sffamily\bfseries\small}]
+  \node[ag, fill=tealC!15, draw=tealC] (A) at (0,0) {Cache A};
+  \node[ag, fill=plumC!14, draw=plumC] (B) at (5.2,0) {Cache B};
+  \node[ag, fill=amberC!16, draw=amberC] (M) at (2.6,-4.0) {Memory};
+  \draw[dashed, coreGrey!60] (A) -- (0,-3.4);
+  \draw[dashed, coreGrey!60] (B) -- (5.2,-3.4);
+  \node[st, text=mesiBlue, anchor=east] at (-1.1,0) {\stM};
+  \draw[msg, plumC] (5.2,-0.9) -- node[above]{1. readmiss (8 B)} (0,-0.9);
+  \draw[msg, tealC] (0,-1.7) -- node[above]{2. send data (72 B)} (5.2,-1.7);
+  \draw[msg, alertRed, very thick] (0,-2.4) -- node[right=6pt, pos=0.35, text=alertRed]{\textbf{3. write back (72 B)}} (2.6,-3.65);
+  \node[st, text=mesiBlue] at (-0.8,-3.1) {\stS};
+  \node[st, text=mesiBlue] at (6.0,-3.1) {\stS};
+  \node[st, text=mesiBlue] at (6.5,0) {\stI};
+  \node[text=coreGrey, align=left, anchor=west] at (7.0,-1.6)
+       {necessary: B needs the data\\[6pt]\textcolor{alertRed}{questionable: does memory}\\\textcolor{alertRed}{need it now?}};
+\end{tikzpicture}
+\end{bigfig}
+\caption[Dirty sharing in MESI]{Dirty sharing under MESI. Cache~A holds the block
+in \stM\ and cache~B reads it. Message~2 is needed for correctness. Message~3 is
+what this report calls a forced writeback.}
+\label{fig:dirty-transaction}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{The Root Cause: The Shared State Must Be Clean}
+\label{sec:dirty-root}
+\sectionmap{[Root cause [S blocks are evicted silently] [So S must match memory]
+  [So M to S must update memory] [The write back follows]]}
+\index{MESI}\index{MSI}\index{forced writeback}\index{coherence axioms}%
+
+The prescribed textbook gives the reason when it describes how MSI answers a
+\textit{readmiss} for a block in \stM:
+
+\begin{quote}
+``We assume that we can seamlessly evict a block in the S state. Hence, it is
+necessary to write the data to the lower level before moving to the S
+state.''~\cite[\S12.4.6, p.~602]{sarangi2025basic}
+\end{quote}
+
+MESI keeps this rule. \Cref{fig:root-chain} sets out the reasoning. A cache must
+be able to drop an \stS\ block without telling anyone, which is what makes \stS\
+cheap. A block can be dropped silently only if its data also survives somewhere
+else, namely in memory. Every \stS\ block must therefore match memory, and a
+block moving from \stM\ to \stS\ must update memory first.
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}[0.95]
+\begin{tikzpicture}[font=\sffamily\scriptsize,
+    s/.style={draw, thick, rounded corners=3pt, align=center, text width=2.55cm,
+              minimum height=1.2cm},
+    a/.style={-{Stealth[length=6pt]}, very thick, slateC}]
+  \node[s, fill=tealC!12, draw=tealC] (r1) at (0,0) {S blocks may be\\evicted \textbf{silently}};
+  \node[s, fill=plumC!12, draw=plumC] (r2) at (3.55,0) {so every S block\\must \textbf{match memory}};
+  \node[s, fill=amberC!15, draw=amberC] (r3) at (7.1,0) {so a block moving\\M $\to$ S must make\\memory up to date};
+  \node[s, fill=alertRed!12, draw=alertRed] (r4) at (10.65,0) {\textbf{forced write back}\\on every dirty\\sharing transaction};
+  \draw[a] (r1) -- (r2); \draw[a] (r2) -- (r3); \draw[a] (r3) -- (r4);
+\end{tikzpicture}
+\end{bigfig}
+\caption[Why MESI writes back on dirty sharing]{The reasoning behind the forced
+writeback. The rule on the left makes shared blocks cheap to evict; the cost on
+the right is paid on every dirty sharing transaction.}
+\label{fig:root-chain}
+\end{figure}
+
+\begin{keybox}[The root cause]
+Neither coherence axiom requires the \gls{fwb}\index{forced writeback}. It follows
+from a design rule, that shared blocks are always clean, which was chosen so that
+shared blocks can be evicted without a message.
+\end{keybox}
+
+No correct protocol can remove a cost that the axioms require, but a cost that
+comes from a design rule can be removed by changing the rule, as long as the
+axioms still hold. The rest of this report asks whether that change pays off.
+
+% ---------------------------------------------------------------
+\section{When the Writeback Is Wasted}
+\label{sec:dirty-wasted}
+\sectionmap{[Wasted write backs [Producer writes again] [Memory copy is out of date again]
+  [Earlier write back was superseded] [Only the last one is needed]]}
+\index{MESI}\index{forced writeback}%
+
+A forced writeback is useful only if someone reads memory's copy before it goes
+out of date. Take a producer core that keeps updating a block and a consumer core
+that reads each new version (\cref{fig:wasted-timeline}). Under MESI every consumer
+read forces a writeback, and every new producer write makes the copy just written
+to memory out of date. Memory ends up with its final value only from the last
+writeback before the block leaves the caches.
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}
+\begin{tikzpicture}[font=\sffamily\scriptsize]
+  \draw[very thick, coreGrey, -{Stealth}] (0,0) -- (13.4,0) node[right]{time};
+  \foreach \x/\lab/\col in {0.8/{P writes\\v1}/tealC, 2.6/{C reads}/plumC,
+                            4.4/{P writes\\v2}/tealC, 6.2/{C reads}/plumC,
+                            8.0/{P writes\\v3}/tealC, 9.8/{C reads}/plumC,
+                            11.9/{block evicted\\(silently)}/coreGrey} {
+    \draw[\col, thick] (\x,-0.12) -- (\x,0.12);
+    \node[above, align=center, text=\col] at (\x,0.15) {\lab};
+  }
+  \foreach \x/\v in {2.6/v1,6.2/v2,9.8/v3} {
+    \draw[-{Stealth}, alertRed, thick] (\x,-0.15) -- (\x,-0.85);
+    \node[draw, alertRed, rounded corners=1pt, fill=alertRed!8, below] at (\x,-0.85) {WB \v};
+  }
+  \node[text=leafC, align=center] at (11.9,-1.1) {memory already\\holds v3};
+  \draw[decorate, decoration={brace, amplitude=4pt, mirror}] (2.1,-1.55) -- (10.3,-1.55)
+    node[midway, below=5pt, text=alertRed, align=center]{three forced write backs; the copies of v1 and v2 in memory\\are overwritten before anything reads them};
+\end{tikzpicture}
+\end{bigfig}
+\caption[Superseded writebacks]{A producer (P) and consumer (C) under MESI. Each
+consumer read forces a writeback and the next producer write makes it out of date.
+Only the writeback of v3 is still current when the block is evicted.}
+\label{fig:wasted-timeline}
+\end{figure}
+
+Here two of the three forced writebacks are overwritten before memory's copy is
+used. With $k$ rounds, $k-1$ of the $k$ forced writebacks are overwritten, and one
+write to memory would have been enough.
+
+% ---------------------------------------------------------------
+\section{Sharing Patterns}
+\label{sec:dirty-patterns}
+\sectionmap{[Patterns [Private: never shared] [Read-only: never written]
+  [Producer-consumer: one writer] [Migratory: writers take turns]]}
+\index{MESI}\index{forced writeback}\index{sharing patterns!producer--consumer}%
+
+Whether forced writebacks happen depends on how a program shares data.
+Shared-memory programs are usually described by four sharing
+patterns~\cite{culler1999parallel}\index{sharing patterns}. \Cref{fig:pattern-tree}
+shows how to tell them apart and \cref{tab:patterns} gives the forced-writeback
+cost of each under MESI.
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=0.8\linewidth}{%
+\begin{forest}
+  decision tree,
+  [Is the block used by\\more than one core?
+    [Private, el=no]
+    [Is it ever\\written?, el=yes
+      [Read-only\\shared, el=no]
+      [Do several cores\\write it in turn?, el=yes
+        [Producer--consumer\\one writer and\\several readers, el=no]
+        [Migratory\\each core reads\\then writes, el=yes]]]]
+\end{forest}}
+\caption[Decision tree: classifying a sharing pattern]{The four sharing patterns.
+Only the two on the bottom row have a block that is modified in one cache and then
+read by another.}
+\label{fig:pattern-tree}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\caption{The four sharing patterns and their forced-writeback cost under MESI.}
+\label{tab:patterns}
+\small
+\begin{tabular}{@{}l p{4.6cm} p{4.4cm}@{}}
+\toprule
+Pattern & Example & Forced write backs (MESI) \\
+\midrule
+Private & a thread's own stack and locals & none: never shared \\
+Read-only shared & an input matrix read by every thread & none: never modified \\
+Producer--consumer & the \texttt{partial[]} results of \cref{lst:omp}, read
+  by the combining thread & one per value produced \\
+Migratory & a counter that each thread reads and then updates in turn &
+  one per hand-off that begins with a read \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\label{sec:dirty-model}
+So the size of the cost depends on the workload as much as on the protocol. A
+program that mostly uses private and read-only data never pays it, and a pipeline
+of producer and consumer threads pays it on every hand-off. For one producer and
+$C$ consumers sharing a block under MESI in steady state, each round has the
+producer's write invalidating the consumers (8\,B), the first consumer's read
+missing, getting the data and forcing a writeback ($8+72+72=152$\,B), and each of
+the other $C-1$ consumers missing and getting the data ($80$\,B each). The bytes
+per round and the share of them that is the forced writeback are
+\begin{equation}
+  B(C) = 160 + 80\,(C-1), \qquad
+  F(C) = \frac{72}{B(C)}
+  \label{eq:pc-model}
+\end{equation}
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}
+  \begin{axis}[width=9.5cm, height=4.8cm, ybar stacked, bar width=20pt,
+      xlabel={Number of consumers $C$}, ylabel={Bytes per value produced},
+      symbolic x coords={1,2,4,8}, xtick=data, ymin=0, ymax=800,
+      legend style={at={(0.03,0.97)}, anchor=north west, font=\scriptsize},
+      grid=major, grid style={coreGrey!15},
+      label style={font=\small}, tick label style={font=\scriptsize}]
+    \addplot[fill=skyC!50, draw=skyC] coordinates {(1,88) (2,168) (4,328) (8,648)};
+    \addlegendentry{control and data messages}
+    \addplot[fill=alertRed!60, draw=alertRed,
+             nodes near coords={\pgfmathprintnumber[fixed,precision=0]{\pgfplotspointmeta}\,\%},
+             point meta=explicit, nodes near coords style={font=\scriptsize\bfseries, text=alertRed}]
+      coordinates {(1,72) [45] (2,72) [30] (4,72) [18] (8,72) [10]};
+    \addlegendentry{forced write back (labelled: share of total)}
+  \end{axis}
+\end{tikzpicture}
+\caption[Forced writeback traffic in producer--consumer sharing]{\Cref{eq:pc-model}
+for 1, 2, 4 and 8 consumers under MESI. The forced writeback is 72 bytes per round,
+so its share is largest (45\,\%) when one consumer reads each value.}
+\label{fig:pc-model}
+\end{figure}
+
+The share of traffic taken by the forced writeback therefore changes with the
+workload (\cref{fig:pc-model}). It is largest in one-to-one producer--consumer
+hand-offs and shrinks when many consumers read each value, so a study of the
+problem has to vary the sharing pattern as well as the core count.
+
+\label{sec:dirty-memory}
+A forced writeback is paid for twice. It occupies the bus or network, which raises
+the per-core demand $d$ of \cref{eq:util}, and it writes to the LLC or DRAM, using
+memory bandwidth that all cores share and that does not grow with the core count.
+When the writeback is later overwritten (\cref{sec:dirty-wasted}), neither cost
+buys anything.

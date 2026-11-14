@@ -1,0 +1,757 @@
+% ===============================================================
+%  PART V -- Simulation (Chapters 17--18)
+%  The simulator, its verification, the workloads and the experiment
+%  configurations. Measurements are in Part VI; code excerpts are in
+%  Appendix E (rule 7).
+% ===============================================================
+
+\part{Simulation}
+\label{part:simulation}
+
+\begin{center}
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  part map,
+  [Part V
+    [Ch.~17: Simulator Design
+      [Why our own simulator] [Traffic layer] [Timing layer] [Verification]]
+    [Ch.~18: Workloads {\&} Configurations
+      [Pattern kernels] [Synthetic mixtures] [Experiments] [Metrics]]
+  ]
+\end{forest}}
+\end{center}
+
+\begin{keybox}[What Part V does]
+Chapter~17 describes the two-layer simulator we wrote in Python to apply the
+method of Chapter~15. The traffic layer counts every message and byte under MSI,
+MESI and MOESI. The timing layer adds per-core clocks, a shared bus and a memory
+port, using the latencies assumed earlier in the report. The chapter ends by
+checking the simulator against every analytical number of Parts~II to~IV.
+Chapter~18 describes the workloads, the experiments and the metrics reported in
+Part~VI. Chapter~10 planned to use the \texttt{gem5} full-system
+simulator~\cite{binkert2011gem5} and OpenMP programs; \cref{sec:sim-why} explains
+why we built the timing model ourselves and used synthetic workloads instead, and
+\cref{sec:wl-scope} and Part~VII state what that costs.
+\end{keybox}
+
+% ===============================================================
+%  Chapter 17 -- Simulator Design
+% ===============================================================
+\chapter{Simulator Design: A Two-Layer Coherence Simulator}
+\label{ch:simulator}
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  chapter map,
+  [Chapter 17
+    [Why our own simulator [Control] [Understanding] [Speed]]
+    [Traffic layer [Caches {\&} holders] [Protocol rules] [Byte accounting]]
+    [Timing layer [Report latencies] [Bus {\&} memory port] [Event loop]]
+    [Verification [Analytical numbers] [Coherence checks] [Part IV identities] [Timing checks]]
+  ]
+\end{forest}}
+\caption[]{Structure of Chapter~17: why we built a new
+simulator, how its two layers work, and how it was checked before any result was
+taken from it.}
+\label{fig:ch17-map}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{Why Build Our Own Simulator}
+\label{sec:sim-why}
+\label{sec:sim-arch}
+\sectionmap{[Choice [Method needs one changed variable] [Team must understand every line]
+  [Fast enough to sweep] [What we give up]]}
+\index{MESI}\index{MOESI}\index{gem5}\index{simulator!traffic layer}\index{simulator!timing layer}%
+
+Coherence studies usually use an established simulator such as
+\texttt{gem5}~\cite{binkert2011gem5}, which models pipelines, caches, interconnects
+and DRAM cycle by cycle, runs real programs and comes with several coherence
+protocols. Three needs of this report pointed the other way. The method of
+Chapter~15 requires MESI and MOESI to differ only in the three rules of
+\cref{tab:transition-diff}, while the protocols shipped with a large simulator are
+separate implementations that differ in many more ways, the situation of
+\cref{fig:method-idea}(a); rewriting one to match the other would have been a
+project of its own. Every result in Part~VI also had to be something we could
+explain from first principles, which a few hundred lines whose rules are the tables
+of this report allow and a large external code base does not. And testing H1 to H4
+needs hundreds of paired runs, which our simulator finishes in about a minute on a
+two-core machine (\cref{tab:sim-choice}). The price is realism: no pipeline, no
+DRAM model and no real programs. We therefore report trends and approximate sizes,
+not predictions of any real machine's run time.
+
+\begin{table}[htbp]
+\centering
+\caption{The two options considered for the simulation study.}
+\label{tab:sim-choice}
+\small
+\begin{tabular}{@{}L{3.3cm} L{4.6cm} L{4.6cm}@{}}
+\toprule
+ & \texttt{gem5}~\cite{binkert2011gem5} & Our two-layer simulator \\
+\midrule
+What is modelled & pipelines, caches, interconnect, DRAM, OS & private caches,
+  one bus, one memory port, per-core clocks \\
+Workloads & real compiled programs & synthetic traces of the four sharing patterns \\
+MESI vs MOESI & two separate implementations & one implementation; three rules swapped \\
+Output & cycles, latencies, energy & bytes, writebacks, cycles, AMAT, utilisation \\
+Time to learn & weeks & the tables of this report \\
+Run time of all experiments & days & about one minute \\
+Satisfies \cref{fig:attribution-tree}? & no (protocols differ widely) & yes \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\Cref{fig:sim-arch} shows the structure. A workload generator produces a trace of
+accesses. The traffic layer replays each access against per-core caches, applies
+the protocol rules, updates states, counts messages and bytes, and checks
+coherence. The timing layer around it decides when each core issues its next
+access and uses the traffic layer's account of what happened to charge latency and
+occupy shared resources. The traffic experiments use the traffic layer alone and
+the timing experiments use both.
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}[0.92]
+\begin{tikzpicture}[font=\sffamily\scriptsize,
+    bx/.style={draw, thick, rounded corners=3pt, minimum height=0.8cm, align=center, inner sep=4pt},
+    ar/.style={-{Stealth}, thick}]
+  \node[bx, fill=tealC!14, draw=tealC, minimum width=2.4cm] (gen) at (0,0) {workload\\generator\\(Ch.~18)};
+  \node[bx, fill=coreGrey!10, draw=coreGrey, minimum width=2.0cm] (tr) at (3.0,0) {trace\\(core, block, R/W)};
+  \draw[thick, mesiBlue, rounded corners=4pt, fill=mesiBlue!4] (4.6,-2.2) rectangle (10.6,2.2);
+  \node[font=\sffamily\bfseries\scriptsize, text=mesiBlue] at (7.6,1.95) {traffic layer (\texttt{coherence\_sim.py})};
+  \node[bx, fill=white, draw=mesiBlue, minimum width=2.2cm] (cache) at (6.0,0.85) {per-core caches\\LRU, 64-B blocks};
+  \node[bx, fill=white, draw=mesiBlue, minimum width=2.2cm] (hold) at (6.0,-0.85) {holders map\\block $\to$ copies};
+  \node[bx, fill=moesiOrange!12, draw=moesiOrange, minimum width=2.4cm] (rules) at (9.0,0.85) {protocol rules\\MSI / MESI / MOESI};
+  \node[bx, fill=memGreen!12, draw=memGreen, minimum width=2.4cm] (chk) at (9.0,-0.85) {coherence checks\\states + versions};
+  \draw[ar, mesiBlue] (cache) -- (rules); \draw[ar, mesiBlue] (hold) -- (rules);
+  \draw[ar, memGreen] (rules) -- (chk);
+  \draw[thick, plumC, rounded corners=4pt, fill=plumC!4] (4.6,-5.0) rectangle (10.6,-2.7);
+  \node[font=\sffamily\bfseries\scriptsize, text=plumC] at (7.6,-2.95) {timing layer (\texttt{timing\_sim.py})};
+  \node[bx, fill=white, draw=plumC, minimum width=1.7cm] (q) at (5.6,-4.05) {event queue\\core clocks};
+  \node[bx, fill=white, draw=plumC, minimum width=1.4cm] (bus) at (7.6,-4.05) {bus};
+  \node[bx, fill=white, draw=plumC, minimum width=1.5cm] (mp) at (9.5,-4.05) {memory port\\owner ports};
+  \node[bx, fill=amberC!14, draw=amberC, minimum width=2.4cm] (out) at (13.0,0) {counters\\bytes, writebacks,\\DSR, $F$};
+  \node[bx, fill=amberC!14, draw=amberC, minimum width=2.4cm] (out2) at (13.0,-3.9) {cycles, AMAT,\\utilisation};
+  \draw[ar] (gen) -- (tr); \draw[ar] (tr) -- (4.6,0);
+  \draw[ar] (10.6,0) -- (out);
+  \draw[ar, plumC] (10.6,-3.9) -- (out2);
+  \draw[ar, plumC, {Stealth}-{Stealth}] (7.6,-2.2) -- node[right, font=\sffamily\tiny, align=left]{access issued /\\event record returned} (7.6,-2.7);
+\end{tikzpicture}
+\end{bigfig}
+\caption[Simulator architecture]{The two layers. The traffic layer is the protocol:
+it decides states, messages and bytes. The timing layer decides when accesses
+happen and how long they take, from the event record returned for each access.}
+\label{fig:sim-arch}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{The Traffic Layer}
+\label{sec:sim-traffic}
+\sectionmap{[Traffic layer [Data structures] [Rules as code]
+  [Byte accounting] [Event record]]}
+\index{MESI}\index{MOESI}\index{MSI}\index{Owned state}\index{Exclusive state}\index{forced writeback}\index{snooping protocol}\index{LRU replacement}\index{owner}\index{simulator!timing layer}%
+
+Each core's cache is an ordered dictionary from block number to a small record of
+state and version. The dictionary order is the LRU order, so a hit moves the block
+to the end and the victim in a full cache is the first entry. A second dictionary,
+the holders map, records which cores hold each block and points at the same
+records, so a snoop (``does any other cache hold this block, and in what state?'')
+is one lookup instead of a search of every cache. Two more maps hold each block's
+latest version and the version last written back, for the value checks of \cref{sec:method-correct}, and counters record every quantity of \cref{tab:metrics}.
+
+The three protocols share one class, and two flags, ``has \stE'' and ``has \stO'',
+select MSI, MESI or MOESI. With both flags set the rules are exactly those of
+\cref{tab:transition-diff}. The read handler (\cref{lst:readmiss} in
+\cref{app:code}) holds the only rule that separates MESI from MOESI on a remote
+read: when another cache holds the block in \stM\ or \stO, the code either charges
+a control and a data message and relabels the holder \stO\ (MOESI), or also charges
+a writeback, updates memory's version and relabels the holder \stS\ (MSI and MESI).
+One rule was not fixed by earlier chapters: a write miss to a block that another
+cache holds dirty. The simulator moves the block from the dirty owner to the
+writer, invalidates every other copy and writes nothing to memory, since the writer
+becomes the new dirty owner. It does this the same way in all three protocols, so
+it cannot favour either side, and none of the four sharing patterns of
+\cref{tab:traffic-patterns} uses it, so it does not affect the analytical numbers
+the simulator is checked against.
+
+Every action is priced with the constants of \cref{tab:counting-rules}, written
+once at the top of the source file so the simulator and the report cannot disagree
+(\cref{tab:sim-bytes}). At the end of a run each block still in \stM\ or \stO\ is
+charged one writeback (the drain), so a protocol cannot look cheaper by leaving
+writebacks unpaid when measurement stops. Before each access the layer clears a
+four-field event record and fills it as the rules run: the kind of access (hit,
+read miss, write miss or upgrade), the supplier (a core, or memory), whether a
+forced writeback happened, and whether a dirty block was evicted. The timing layer
+reads only this record and never needs the protocol rules. Adding the record
+changed no counter; the traffic results were byte-for-byte identical before and
+after.
+
+\begin{table}[htbp]
+\centering
+\caption{Bytes charged by the traffic layer for each action (interconnect /
+memory).}
+\label{tab:sim-bytes}
+\small
+\begin{tabular}{@{}L{6.6cm} c c c@{}}
+\toprule
+Action & MSI & MESI & MOESI \\
+\midrule
+Read miss served by memory & 80 / 0 & 80 / 0 & 80 / 0 \\
+Read miss, block in \stM\ elsewhere & 152 / 64 & 152 / 64 & 80 / 0 \\
+Read miss, block in \stO\ elsewhere & --- & --- & 80 / 0 \\
+Write miss (any supplier) & 80 / 0 & 80 / 0 & 80 / 0 \\
+Upgrade (write hit in \stS, or \stO) & 8 / 0 & 8 / 0 & 8 / 0 \\
+Write hit in \stE & --- & 0 / 0 & 0 / 0 \\
+Eviction of \stM\ (or \stO) & 72 / 64 & 72 / 64 & 72 / 64 \\
+Drain: block still dirty at the end & 72 / 64 & 72 / 64 & 72 / 64 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------
+\section{The Timing Layer}
+\label{sec:sim-timing}
+\label{sec:sim-example}
+\sectionmap{[Timing layer [Latencies from the report] [Three kinds of resource]
+  [Event loop] [Serial or overlapped write back] [Two readers at once]]}
+\index{MESI}\index{MOESI}\index{forced writeback}\index{snooping protocol}\index{bus utilisation}\index{owner}\index{simulator!traffic layer}\index{simulator!timing layer}%
+
+The timing layer uses the latencies the report has already assumed and adds as few
+as possible (\cref{tab:sim-latency}). Each added parameter is varied in at least one
+experiment of Chapter~18, so no conclusion rests on one guessed value. Chapter~8
+defined $T_{\mathrm{coh}}$ as the time to get a block from another cache
+``including any writeback the protocol performs on the way'', which fits MESI's
+dirty read. MOESI makes no writeback on the same read, so its latency is
+$T_{\mathrm{coh}}$ minus the writeback transfer time, 51 cycles on the assumed bus.
+This is the smallest change to the report's numbers that lets the two protocols
+differ in latency at all.
+
+\begin{table}[htbp]
+\centering
+\caption{Parameters of the timing layer. The upper block repeats the report's own
+assumptions; the lower blocks are introduced or derived here.}
+\label{tab:sim-latency}
+\small
+\begin{tabular}{@{}L{1.9cm} r L{5.6cm} L{3.4cm}@{}}
+\toprule
+Symbol & Value & Meaning & Source \\
+\midrule
+$T_{L1}$ & 1 & cache hit (cycles) & \cref{eq:amat}, Sarangi Ex.~147 \\
+$T_{\mathrm{mem}}$ & 100 & read served by memory & \cref{eq:amat}, \cref{fig:hierarchy} \\
+$T_{\mathrm{coh}}$ & 60 & read served by a modified copy, including the writeback & \cref{eq:amat-coh}, \cref{fig:amat-bars} \\
+--- & --- & one message on the bus at a time; requests queue & \cref{eq:util} \\
+\midrule
+bus width & 8\,B/cycle & a 72-B message takes 9 cycles & assumed; Ch.~18 E1 \\
+arbitration & 1 & cycles per message & assumed \\
+$T_{\mathrm{upg}}$ & 10 & upgrade / invalidation round trip & assumed \\
+$M_{\mathrm{occ}}$ & 10 & memory port busy per 64-B access & assumed; swept in E5 \\
+$O_{\mathrm{occ}}$ & 10 & owner's cache port busy per block supplied & assumed; swept in E4 \\
+think & 2--2000 & mean cycles of computation between memory operations & swept in E1 \\
+\midrule
+$t_{\mathrm{wb}}$ & 9 & writeback transfer: $\lceil 72/8 \rceil$ & derived \\
+$T_{\mathrm{c2c}}$ & 51 & cache-to-cache read without writeback: $T_{\mathrm{coh}} - t_{\mathrm{wb}}$ & derived; swept in E4 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Three kinds of shared resource are modelled, each serving one request at a time in
+arrival order (\cref{fig:sim-resources}). The bus is held by each message for
+$\lceil\text{bytes}/8\rceil + 1$ cycles, 2 for a control message and 10 for a data
+or writeback message, so a MESI dirty read holds it for $2+10+10=22$ cycles and the
+same read under MOESI for 12. The memory port is held for $M_{\mathrm{occ}}$ cycles
+by each 64-byte read or write, including every forced writeback. Each core's cache
+port is held for $O_{\mathrm{occ}}$ cycles whenever that core supplies a block as an
+owner. The bus is split-transaction: it is busy only while messages are on it, not
+while memory fetches the data. A dirty eviction is posted, so it occupies the bus
+and memory port without stalling the core.
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}[0.9]
+\begin{tikzpicture}[font=\sffamily\scriptsize,
+    core/.style={draw, thick, rounded corners=2pt, minimum width=1.5cm, minimum height=0.75cm, align=center},
+    res/.style={draw, thick, rounded corners=2pt, minimum height=0.7cm, align=center},
+    ar/.style={-{Stealth}, thick}]
+  \foreach \i/\x in {0/0, 1/2.4, 2/4.8, 3/7.2} {
+    \node[core, fill=tealC!12, draw=tealC] (c\i) at (\x,2.6) {core P\i\\own clock};
+    \node[res, fill=plumC!10, draw=plumC, minimum width=1.5cm] (p\i) at (\x,1.3) {cache port\\$O_{\mathrm{occ}}$};
+    \draw[thick, tealC] (c\i) -- (p\i);
+    \draw[thick, coreGrey] (p\i.south) -- (\x,0.25);
+  }
+  \draw[line width=4pt, mesiBlue!60] (-0.9,0) -- (10.4,0);
+  \node[font=\sffamily\bfseries\scriptsize, text=mesiBlue, anchor=west] at (-0.9,-0.4) {bus: one message at a time, $\lceil \mathrm{bytes}/8\rceil + 1$ cycles each};
+  \node[res, fill=amberC!14, draw=amberC, minimum width=2.0cm] (mp) at (9.6,1.3) {memory port\\$M_{\mathrm{occ}}$ per access};
+  \node[res, fill=amberC!25, draw=amberC, minimum width=2.0cm] (mem) at (9.6,2.6) {memory\\$T_{\mathrm{mem}} = 100$};
+  \draw[thick, amberC] (mem) -- (mp); \draw[thick, coreGrey] (mp.south) -- (9.6,0.25);
+  \node[draw=alertRed, dashed, rounded corners=2pt, fit=(mp), inner sep=3pt] {};
+  \node[text=alertRed, font=\sffamily\tiny, align=center] at (9.6,0.65) {every forced write back\\uses it too};
+\end{tikzpicture}
+\end{bigfig}
+\caption[Timing-layer resources]{Each core has its own clock and a cache port used
+when it supplies data as an owner; all cores share one bus and one memory port. A
+request waits while the resource it needs is busy.}
+\label{fig:sim-resources}
+\end{figure}
+
+The layer is a discrete-event simulation. Each core's accesses form a stream, and
+between accesses the core computes for a think time drawn from an exponential
+distribution. The draws come from a seed that depends only on the core and the
+configuration, so the MESI and MOESI runs see identical think times. A priority
+queue holds each core's next ready time. The loop takes the earliest core, lets the
+traffic layer process its access, and charges the access: a
+hit costs $T_{L1}$; a miss waits for and occupies the bus, then waits for the memory
+port (memory supplies) or the owner's port (a cache supplies) and completes after
+$T_{\mathrm{mem}}$, $T_{\mathrm{coh}}$ or $T_{\mathrm{c2c}}$; an upgrade completes
+after $T_{\mathrm{upg}}$. The core's next access is ready when this one completes
+plus the next think time. \Cref{lst:timing} in \cref{app:code} is the code that
+charges a miss.
+
+Whether the reader of a modified block waits for the forced writeback depends on
+the bus, not the protocol. On some buses memory captures the flushed block as it
+passes to the reader, so one transfer serves both; on others the writeback is a
+separate step. The report's $T_{\mathrm{coh}}$, which includes the writeback,
+implies the second. The timing layer supports both (\cref{fig:sim-wbmode}). In the
+serial mode, the default, the reader waits $T_{\mathrm{coh}}=60$ cycles. In the
+overlapped mode it waits $T_{\mathrm{c2c}}=51$, and the writeback occupies the bus
+and memory port without delaying it. Part~VI reports both.
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}[0.95]
+\begin{tikzpicture}[font=\sffamily\scriptsize, x=0.13cm]
+  \foreach \y/\l in {0/{MESI, serial}, -1.1/{MESI, overlapped}, -2.2/{MOESI}} {
+    \node[anchor=east] at (-2,\y) {\l};
+  }
+  \fill[mesiBlue!30] (0,-0.25) rectangle (2,0.25);
+  \fill[plumC!35] (2,-0.25) rectangle (51,0.25);
+  \fill[alertRed!45] (51,-0.25) rectangle (60,0.25);
+  \node at (26,0) {owner lookup and data};
+  \node[text=white, font=\sffamily\bfseries\tiny] at (55.5,0) {WB};
+  \draw[very thick] (60,-0.35) -- (60,0.35) node[above]{60};
+  \fill[mesiBlue!30] (0,-1.35) rectangle (2,-0.85);
+  \fill[plumC!35] (2,-1.35) rectangle (51,-0.85);
+  \fill[alertRed!20] (51,-1.35) rectangle (60,-0.85);
+  \node at (26,-1.1) {owner lookup and data};
+  \node[font=\sffamily\tiny, text=alertRed] at (69,-1.1) {WB off the critical path};
+  \draw[very thick] (51,-1.45) -- (51,-0.75) node[above]{51};
+  \fill[mesiBlue!30] (0,-2.45) rectangle (2,-1.95);
+  \fill[plumC!35] (2,-2.45) rectangle (51,-1.95);
+  \node at (26,-2.2) {owner lookup and data};
+  \node[font=\sffamily\tiny, text=memGreen] at (63,-2.2) {no write back};
+  \draw[very thick] (51,-2.55) -- (51,-1.85) node[above]{51};
+  \draw[-{Stealth}] (0,-2.95) -- (80,-2.95) node[right]{cycles after bus grant};
+  \foreach \x in {0,20,40,60} { \draw (\x,-2.9) -- (\x,-3.0) node[below]{\x}; }
+\end{tikzpicture}
+\end{bigfig}
+\caption[Serial and overlapped writeback]{Latency of a read served by a modified
+copy on an idle system. In serial mode the MESI reader waits for the 9-cycle
+writeback; in overlapped mode it does not, but the writeback still uses the bus and
+memory port. MOESI makes no writeback.}
+\label{fig:sim-wbmode}
+\end{figure}
+
+On an idle system the latencies differ by 9 cycles, but waiting changes this.
+Suppose P0 holds blocks A and B in \stM, and at the same moment P1 reads A and P2
+reads B. Both need the bus, so one waits for the other. \Cref{fig:sim-gantt} and
+\cref{tab:sim-gantt} trace the two reads in serial mode; the simulator gives exactly
+these values. The first reader gains the 9 cycles of the writeback, as in
+\cref{eq:dL}. The second gains 19: its own 9 plus the 10 cycles it no longer waits
+for the first reader's writeback to clear the bus. With more cores competing, every
+waiting request gains the same way, which is why H2 expects the time gain to grow
+with utilisation.
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}[0.95]
+\begin{tikzpicture}[font=\sffamily\scriptsize, x=0.125cm, y=0.62cm]
+  \def\row#1#2{\node[anchor=east] at (-2,#1) {#2};}
+  \row{0}{MESI: bus}
+  \row{-1}{MESI: P1 reads A}
+  \row{-2}{MESI: P2 reads B}
+  \row{-3.6}{MOESI: bus}
+  \row{-4.6}{MOESI: P1 reads A}
+  \row{-5.6}{MOESI: P2 reads B}
+  \fill[tealC!45] (0,-0.3) rectangle (22,0.3);  \node at (11,0) {P1: 2+10+10};
+  \fill[plumC!40] (22,-0.3) rectangle (44,0.3); \node at (33,0) {P2: 2+10+10};
+  \fill[tealC!20] (0,-1.3) rectangle (61,-0.7); \node at (30,-1) {served by P0 (incl.\ write back)};
+  \draw[very thick] (61,-1.38) -- (61,-0.62) node[right, xshift=1pt, yshift=-6pt]{61};
+  \fill[pattern=north east lines, pattern color=alertRed!70] (0,-2.3) rectangle (22,-1.7);
+  \node[text=alertRed, fill=white, inner sep=1pt] at (11,-2) {wait 22};
+  \fill[plumC!18] (22,-2.3) rectangle (83,-1.7); \node at (52,-2) {served by P0 (incl.\ write back)};
+  \draw[very thick] (83,-2.38) -- (83,-1.62) node[right, xshift=1pt, yshift=-6pt]{83};
+  \fill[tealC!45] (0,-3.9) rectangle (12,-3.3);  \node at (6,-3.6) {P1};
+  \fill[plumC!40] (12,-3.9) rectangle (24,-3.3); \node at (18,-3.6) {P2};
+  \fill[tealC!20] (0,-4.9) rectangle (52,-4.3); \node at (26,-4.6) {served by owner P0};
+  \draw[very thick] (52,-4.98) -- (52,-4.22) node[right, xshift=1pt, yshift=-6pt]{52};
+  \fill[pattern=north east lines, pattern color=alertRed!70] (0,-5.9) rectangle (12,-5.3);
+  \node[text=alertRed, fill=white, inner sep=1pt] at (6,-5.6) {12};
+  \fill[plumC!18] (12,-5.9) rectangle (64,-5.3); \node at (38,-5.6) {served by owner P0};
+  \draw[very thick] (64,-5.98) -- (64,-5.22) node[right, xshift=1pt, yshift=-6pt]{64};
+  \draw[-{Stealth}] (0,-6.6) -- (92,-6.6) node[right]{cycles};
+  \foreach \x in {0,20,40,60,80} { \draw (\x,-6.55) -- (\x,-6.65) node[below]{\x}; }
+  \draw[dashed, coreGrey] (0,-6.6) -- (0,0.4);
+\end{tikzpicture}
+\end{bigfig}
+\caption[Two simultaneous dirty reads]{Two simultaneous reads of blocks held in \stM\
+by P0 (serial mode). Under MESI each read holds the bus for 22 cycles because of the
+writeback, so P2 waits 22 cycles; under MOESI it waits 12. Latencies include
+$T_{L1}=1$.}
+\label{fig:sim-gantt}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\caption{The example of \cref{fig:sim-gantt} in numbers (cycles).}
+\label{tab:sim-gantt}
+\small
+\begin{tabular}{@{}l c c c c@{}}
+\toprule
+ & P1 latency & P2 latency & Mean latency & Bus busy for the two reads \\
+\midrule
+MESI (serial) & 61 & 83 & 72 & 44 \\
+MOESI & 52 & 64 & 58 & 24 \\
+\midrule
+MOESI saving & 9 & 19 & 14 (19\,\%) & 20 (45\,\%) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The layer has no processor pipeline (a core stalls fully on a miss), no out-of-order
+execution or prefetching, no DRAM banks or row buffers, one level of private cache,
+and one snooping bus instead of a network. Execution time is the finish time of the
+slowest core. These simplifications are why Part~VI compares MESI with MOESI
+relative to each other on identical inputs and makes no claim about absolute run
+times.
+
+% ---------------------------------------------------------------
+\section{Verification}
+\label{sec:sim-verify}
+\sectionmap{[Verification [Every analytical number reproduced] [Coherence checked on random runs]
+  [Part IV identities hold] [Timing checks] [Only then results]]}
+\index{simulator!traffic layer}\index{simulator!timing layer}\index{verification}%
+
+We verified the simulator in four automated ways before taking any result from it;
+the commands in \cref{lst:repro} (\cref{app:code}) rerun all of them in seconds.
+First, the traffic layer was run on the pattern kernels of Chapter~18 and its byte
+counts compared with the numbers derived by hand in Parts~II and~III
+(\cref{tab:verify-patterns}); all 22 checks match exactly. Steady-state values are
+measured as the difference between runs of $k+1$ and $k$ units, which cancels the
+cold start and the drain.
+
+\begin{table}[htbp]
+\centering
+\caption{Verification against \cref{tab:traffic-patterns} ($C=1$) and against
+\cref{eq:upd-mesi,eq:upd-moesi} (bytes per round with $C$ consumers). Each cell of
+the upper block is simulated\,/\,analytical bytes.}
+\label{tab:verify-patterns}
+\label{tab:verify-bc}
+\small
+\begin{tabular}{@{}l c c c c@{}}
+\toprule
+Pattern (unit) & MSI & MESI & MOESI & Result \\
+\midrule
+Private (read, write, evict) & 160 / 160 & 152 / 152 & 152 / 152 & 3 of 3 match \\
+Read-only (per reader) & 80 / 80 & 80 / 80 & 80 / 80 & 3 of 3 match \\
+Producer--consumer (per round) & 160 / 160 & 160 / 160 & 88 / 88 & 3 of 3 match \\
+Migratory (per hand-off) & 160 / 160 & 160 / 160 & 88 / 88 & 3 of 3 match \\
+\midrule
+\multicolumn{5}{@{}L{12.4cm}@{}}{Producer--consumer with $C = 1, 2, 4, 8, 15$
+  consumers: MESI simulated 160, 240, 400, 720, 1280\,B, equal to $160+80(C-1)$;
+  MOESI simulated 88, 168, 328, 648, 1208\,B, equal to $88+80(C-1)$. 10 of 10
+  match.} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Second, the kernels exercise few transitions, so the layer was also run with every
+check of \cref{sec:method-correct} enabled on 144 random workloads: every
+combination of 2, 4, 8 and 16 cores, cache capacities of 2, 4 and 16 blocks and
+unlimited, three sharing mixes and all three protocols, with 20\,000 accesses each.
+The tiny caches force constant evictions of owned blocks, the case most likely to
+expose a missing writeback. No state or value invariant was violated.
+
+Third, the propositions of Part~IV were derived by hand, so the simulator checks
+them and they check the simulator (\cref{tab:verify-identities}). Each held exactly,
+to floating-point rounding, on all 468 paired runs of the two traffic experiments.
+Fourth, the timing layer was checked against latencies worked out by hand on an
+idle system and on one case with deliberate queueing (\cref{tab:verify-timing}); all
+eleven checks pass.
+
+\begin{table}[htbp]
+\centering
+\caption{The results of Part~IV checked on every paired traffic run (468 pairs).}
+\label{tab:verify-identities}
+\small
+\begin{tabular}{@{}L{5.3cm} L{4.6cm} l@{}}
+\toprule
+Statement & Check on each pair & Result \\
+\midrule
+\Cref{prop:residency}: same contents & equal read misses, write misses,
+  upgrades and hit rates & held in all pairs \\
+\Cref{eq:dB-writebacks}: only writebacks differ & $\Delta B = 72\,(W_{\mathrm{MESI}} - W_{\mathrm{MOESI}})$ & held in all pairs \\
+Forced writebacks are dirty reads & $B_{\mathrm{fwb}} = 72\,n_{\mathrm{dr}}$ under MESI & held in all pairs \\
+\Cref{prop:never-worse}: bounds & $0 \le \Delta B \le 72\,n_{\mathrm{dr}}$ & held in all pairs \\
+\Cref{eq:identity}: saving identity & $|S_B - \sigma\cdot72\,\dsr/\bar b| < 10^{-15}$ & held in all pairs \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Verification of the timing layer (cycles; latencies include $T_{L1}=1$).}
+\label{tab:verify-timing}
+\small
+\begin{tabular}{@{}L{7.0cm} r r l@{}}
+\toprule
+Check & Simulated & Expected & \\
+\midrule
+Read miss served by memory & 101 & 101 & pass \\
+MESI: two memory misses then an upgrade (sum) & 213 & 213 & pass \\
+MESI serial: write miss + dirty read (sum) & 162 & 162 & pass \\
+MOESI: write miss + dirty read (sum) & 153 & 153 & pass \\
+MESI overlapped: write miss + dirty read (sum) & 153 & 153 & pass \\
+Two simultaneous misses: mean latency & 107 & 107 & pass \\
+Two simultaneous misses: mean bus wait & 6 & 6 & pass \\
+Derived $T_{\mathrm{c2c}} = T_{\mathrm{coh}} - 9$ & 51 & 51 & pass \\
+Bus cycles of a control and a data message & 2, 10 & 2, 10 & pass \\
+MESI bus-busy cycles: write miss + dirty read & 34 & 34 & pass \\
+MOESI bus-busy cycles: write miss + dirty read & 24 & 24 & pass \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ===============================================================
+%  Chapter 18 -- Workloads, Configurations and Metrics
+% ===============================================================
+\chapter{Workloads, Configurations and Metrics}
+\label{ch:workloads}
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  chapter map,
+  [Chapter 18
+    [Scope [Planned vs used] [What is lost]]
+    [Kernels {\&} mixtures [Four micro-traces] [Knob $d$] [Seeds]]
+    [Experiments [Traffic: 2 sweeps] [Timing: E1 to E5]]
+    [Metrics {\&} reproducibility [Traffic] [Time]]
+  ]
+\end{forest}}
+\caption[]{Structure of Chapter~18: the workloads, the
+experiments that use them, and how every reported number is defined.}
+\label{fig:ch18-map}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{From the Problem Scope to the Workloads}
+\label{sec:wl-scope}
+\sectionmap{[Scope [Chapter 10 planned OpenMP and directories]
+  [Used: synthetic patterns on a bus] [Why] [What is lost]]}
+\index{MESI}\index{MOESI}\index{directory protocol}\index{OpenMP}%
+
+\Cref{tab:scope-change} compares the scope set in \cref{sec:prob-scope} with what
+the study uses. The changes have one cause. The method of Chapter~15 needs a
+simulator in which MESI and MOESI differ only in three rules, and we chose to build
+it rather than adapt a large external one. Running real programs would have meant
+turning them into traces with an instrumentation tool we did not have time to set
+up and validate, so we generated the four sharing patterns directly, since
+Chapter~9 showed they decide the forced-writeback cost.
+
+\begin{table}[htbp]
+\centering
+\caption{Scope planned in Chapter 10 and scope used in this study.}
+\label{tab:scope-change}
+\small
+\begin{tabular}{@{}L{2.6cm} L{4.2cm} L{5.8cm}@{}}
+\toprule
+Item & Planned (\cref{sec:prob-scope}) & Used, and consequence \\
+\midrule
+Workloads & OpenMP C programs (e.g.\ matrix multiplication, image filtering) &
+  synthetic traces of the four sharing patterns; results describe the patterns,
+  not named programs \\
+Organisation & snooping bus and directory & snooping bus only; directory
+  results remain analytical (\cref{tab:p2p}) \\
+Simulator & trace-driven, checked with \texttt{gem5} & our two-layer simulator;
+  no cycle-accurate cross-check \\
+Congestion metric & network-on-chip congestion & bus utilisation and queueing
+  delay on the snooping bus (\cref{fig:res-h2}); no network-on-chip model \\
+Cores & 2, 4, 8, 16 & 2, 4, 8, 16 (unchanged) \\
+Protocols & MSI family & MSI, MESI, MOESI (unchanged) \\
+Consistency, false sharing & out of scope & out of scope (unchanged) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------
+\section{Pattern Kernels and Synthetic Mixtures}
+\label{sec:wl-kernels}
+\label{sec:wl-mixtures}
+\sectionmap{[Workloads [Four kernels for verification] [Four address pools]
+  [One knob d for dirty sharing] [Fixed seeds]]}
+\index{dirty sharing}\index{Dirty Sharing Ratio}\index{sharing patterns!producer--consumer}\index{sharing patterns!migratory}\index{verification}%
+
+Four short deterministic traces reproduce one unit of each sharing pattern of
+\cref{tab:patterns} on one block (\cref{fig:kernels}). They are used for
+verification, and their names are reused for the pools of the synthetic generator.
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}[0.92]
+\begin{tikzpicture}[font=\sffamily\scriptsize,
+    rd/.style={draw=tealC, fill=tealC!15, thick, rounded corners=1pt, minimum width=0.85cm, minimum height=0.45cm},
+    wr/.style={draw=alertRed, fill=alertRed!15, thick, rounded corners=1pt, minimum width=0.85cm, minimum height=0.45cm}]
+  \node[anchor=east, font=\sffamily\bfseries\scriptsize] at (-0.3,0) {Private};
+  \node[rd] at (0.6,0) {P0 R}; \node[wr] at (1.6,0) {P0 W};
+  \node[anchor=west, text=coreGrey] at (2.3,0) {then evicted (drain); one core only};
+  \node[anchor=east, font=\sffamily\bfseries\scriptsize] at (-0.3,-0.8) {Read-only};
+  \foreach \i in {0,...,7} { \node[rd] at (0.6+\i*1.0,-0.8) {P\i\ R}; }
+  \node[anchor=west, text=coreGrey] at (8.3,-0.8) {never written};
+  \node[anchor=east, font=\sffamily\bfseries\scriptsize] at (-0.3,-1.6) {Producer--consumer};
+  \node[wr] at (0.6,-1.6) {P0 W}; \node[rd] at (1.6,-1.6) {P1 R}; \node[rd] at (2.6,-1.6) {P2 R};
+  \node at (3.35,-1.6) {$\cdots$}; \node[rd] at (4.1,-1.6) {P$C$ R};
+  \node[wr] at (5.3,-1.6) {P0 W}; \node[rd] at (6.3,-1.6) {P1 R}; \node at (7.05,-1.6) {$\cdots$};
+  \node[anchor=west, text=coreGrey] at (7.6,-1.6) {repeated rounds};
+  \node[anchor=east, font=\sffamily\bfseries\scriptsize] at (-0.3,-2.4) {Migratory};
+  \foreach \i/\c in {0/0,1/1,2/2,3/3} {
+    \node[rd] at (0.6+\i*2.0,-2.4) {P\c\ R}; \node[wr] at (1.6+\i*2.0,-2.4) {P\c\ W}; }
+  \node[anchor=west, text=coreGrey] at (8.3,-2.4) {block moves on};
+\end{tikzpicture}
+\end{bigfig}
+\caption[The four pattern kernels]{The four pattern kernels, each on one block (R:
+read, W: write). Steady-state costs come from differencing runs of $k+1$ and $k$
+units.}
+\label{fig:kernels}
+\end{figure}
+
+Programs mix the patterns, so the experiments use traces that mix them in
+controlled proportions. The generator splits the address space into four pools
+(\cref{fig:addr-pools}) and builds a trace one operation at a time. It picks a pool
+with probability $(1-d)/2$ for private, $(1-d)/2$ for read-only, $d/2$ for
+producer--consumer and $d/2$ for migratory, so $d$ is the share of operations in
+the dirty-sharing patterns. A private operation is a random core accessing one of
+its own 96 blocks, writing with probability 0.3. A read-only operation is a random
+core reading one of 24 shared blocks. A producer--consumer operation picks one of 24
+blocks, each with a fixed producer (block number modulo $N$); with probability
+$p_w$ the producer writes it, and otherwise a random other core reads it. A
+migratory operation has a core different from the last one read and then write one
+of 12 blocks. The knob $d$ sets the input, and the DSR is measured. Because DSR is
+weighted by transactions (\cref{eq:dsr-mix}) it rises steeply at small $d$, so the
+sweeps use values of $d$ concentrated near zero. Every random choice is seeded by
+the configuration, so a trace can be regenerated exactly (\cref{tab:wl-params}).
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}[0.9]
+\begin{tikzpicture}[font=\sffamily\scriptsize]
+  \def\h{0.75}
+  \fill[skyC!25] (0,0) rectangle (7.2,\h);   \node at (3.6,\h/2) {private: 96 blocks per core ($96N$)};
+  \fill[moesiOrange!30] (7.2,0) rectangle (9.0,\h); \node[align=center] at (8.1,\h/2) {prod.--cons.\\24};
+  \fill[alertRed!25] (9.0,0) rectangle (10.2,\h); \node[align=center] at (9.6,\h/2) {migr.\\12};
+  \fill[memGreen!25] (10.2,0) rectangle (12.0,\h); \node[align=center] at (11.1,\h/2) {read-only\\24};
+  \draw[thick, coreGrey] (0,0) rectangle (12.0,\h);
+  \foreach \x in {7.2,9.0,10.2} { \draw[thick, coreGrey] (\x,0) -- (\x,\h); }
+  \node[anchor=north] at (3.6,-0.1) {probability $(1-d)/2$};
+  \node[anchor=north, align=center] at (8.6,-0.1) {$d/2$ \;\; $d/2$};
+  \node[anchor=north] at (11.1,-0.1) {$(1-d)/2$};
+  \draw[decorate, decoration={brace, amplitude=5pt, mirror}] (7.2,-0.6) -- (10.2,-0.6)
+     node[midway, below=6pt, text=alertRed]{dirty-sharing pools};
+\end{tikzpicture}
+\end{bigfig}
+\caption[Address pools of the generator]{The generator's address space and the
+probability of each pool. Only the two middle pools can produce dirty reads.}
+\label{fig:addr-pools}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\caption{Parameters of the workload generator.}
+\label{tab:wl-params}
+\small
+\begin{tabular}{@{}L{3.6cm} L{3.6cm} L{5.4cm}@{}}
+\toprule
+Parameter & Values & Role \\
+\midrule
+Cores $N$ & 2, 4, 8, 16 & one stream per core \\
+Dirty-sharing share $d$ & 0 to 1 (11 values, most below 0.1) & share of operations in the producer--consumer and migratory pools \\
+Producer write probability $p_w$ & 0.15, 0.3, 0.5 & writes per round of producer--consumer sharing \\
+Private write probability & 0.3 & writes to private data \\
+Pool sizes & 96 per core / 24 / 12 / 24 blocks & private / prod.--cons. / migratory / read-only \\
+Trace length & 60\,000 (traffic), 30\,000 (timing) & accesses per run \\
+Seeds & 1, 2, 3 & three independent traces per configuration \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------
+\section{Experiments, Metrics and Reproducibility}
+\label{sec:wl-experiments}
+\label{sec:wl-metrics}
+\label{sec:wl-repro}
+\sectionmap{[Experiments [{T1, T2 traffic}] [E1 to E5 timing]
+  [Metrics defined once] [All paired] [About one minute to rerun]]}
+\index{simulator!traffic layer}\index{simulator!timing layer}%
+
+\Cref{tab:experiments} lists every experiment reported in Part~VI. Each
+configuration runs under each protocol on the same trace, as Chapter~15 requires,
+giving 468 paired traffic runs and 288 paired timing runs; the last column names
+the hypothesis each experiment tests. \Cref{tab:metrics} defines every number
+Part~VI reports. Traffic metrics come from the traffic layer and time metrics from
+the timing layer, and protocols are always compared per pair (\cref{eq:paired}). The
+code, inputs and outputs are kept together, and every number in Part~VI can be
+regenerated with the commands in \cref{lst:repro} on any machine with Python~3.9 or
+later and \texttt{numpy}, \texttt{pandas} and \texttt{matplotlib}. Seeds are fixed,
+so repeated runs give byte-identical result files; we checked this for both layers.
+
+\begin{table}[htbp]
+\centering
+\caption{Experiments. ``Fixed'' values hold unless the row varies them. Caches are
+1024 blocks (64\,KB) unless varied, large enough for the private pool.}
+\label{tab:experiments}
+\small
+\begin{tabular}{@{}l L{3.0cm} L{4.6cm} c L{2.0cm}@{}}
+\toprule
+ & Varies & Fixed & Pairs & Tests \\
+\midrule
+T1 & $N$, $d$ (11), $p_w$ (3), seed (3) & 64\,KB caches; MSI, MESI, MOESI & 396 & H1, H3, H4 \\
+T2 & cache 4--1024 blocks, $d \in\{0.2,0.5,0.8\}$, seed & $N=8$, $p_w = 0.3$ & 72 & H3, H4 ($\sigma$) \\
+\midrule
+E1 & think 2--2000 cycles (10), $N \in\{8,16\}$, writeback mode & $d=0.5$, $p_w=0.3$ & 120 & H2 \\
+E2 & $N$ (4), think $\in\{40, 300\}$ & $d=0.5$, $p_w=0.3$ & 24 & H1, H2 \\
+E3 & cache 4--1024 blocks, $d \in\{0.2,0.5,0.8\}$ & $N=8$, think 40 & 72 & H4 \\
+E4 & $T_{\mathrm{coh}}$ 30--200, $O_{\mathrm{occ}}$ 5--40 & $N=8$, $d=0.5$, think 40 & 60 & H4 (Effect B) \\
+E5 & $M_{\mathrm{occ}}$ 5--40 & $N=8$, $d=0.5$, think 40 & 12 & H2 (memory) \\
+\bottomrule
+\multicolumn{5}{@{}l}{\footnotesize T = traffic layer only (trace order); E = both layers. All rows use 3 seeds.}
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Metrics reported in Part~VI.}
+\label{tab:metrics}
+\small
+\begin{tabular}{@{}L{2.4cm} L{6.4cm} L{3.8cm}@{}}
+\toprule
+Metric & Definition & Defined in \\
+\midrule
+$B_{\mathrm{tot}}$ & interconnect bytes, including the drain & \cref{tab:sim-bytes} \\
+$B_{\mathrm{fwb}}$ & bytes of forced writebacks (MESI, MSI) & \cref{sec:prob-formal} \\
+$F$ & $B_{\mathrm{fwb}}/B_{\mathrm{tot}}$ under MESI & \cref{eq:fwb-fraction} \\
+$\dsr$ & dirty reads / coherence transactions, under MESI & \cref{sec:dsr-def} \\
+$\bar b$ & $B_{\mathrm{tot}}/n_{\mathrm{tx}}$ under MESI & \cref{eq:identity} \\
+$\sigma$ & saved epochs / dirty reads & \cref{eq:sigma} \\
+$S_B$ & $1 - B_{\mathrm{tot}}(\mathrm{MOESI})/B_{\mathrm{tot}}(\mathrm{MESI})$ & \cref{eq:paired} \\
+Memory bytes & bytes written to memory & \cref{tab:sim-bytes} \\
+\midrule
+$T$ & finish time of the slowest core (cycles) & \cref{sec:sim-timing} \\
+AMAT & mean cycles per memory operation, hits included & \cref{eq:amat-coh} \\
+$U_{\mathrm{bus}}$, $U_{\mathrm{mem}}$ & busy cycles / $T$ for bus and memory port & \cref{eq:util} \\
+Speed-up & $T(\mathrm{MESI})/T(\mathrm{MOESI})$ & \cref{eq:paired} \\
+Time reduction & $1 - T(\mathrm{MOESI})/T(\mathrm{MESI})$ & --- \\
+Dirty-read latency & mean latency of reads served by a modified or owned copy & \cref{eq:dL} \\
+\bottomrule
+\end{tabular}
+\end{table}

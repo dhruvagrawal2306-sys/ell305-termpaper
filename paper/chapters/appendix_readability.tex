@@ -1,0 +1,25 @@
+% ===============================================================
+%  APPENDIX B -- Reading indices (rule 6)
+%  Values are computed by simulator/readability.py from the text of
+%  the compiled report and written to data/readability.tex.
+% ===============================================================
+\chapter{Reading Indices}
+\label{app:readability}
+\index{reading indices}%
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=0.8\linewidth}{%
+\begin{forest}
+  chapter map,
+  [Reading indices
+    [Five grade-level indices [{Fog, Flesch--Kincaid, SMOG}] [{Coleman--Liau, ARI}]]
+    [How they were computed [Body text only] [Same formulas as the reference]]
+    [Results [Whole report] [Each Part]]
+  ]
+\end{forest}}
+\caption[]{Structure of this appendix.}
+\label{fig:app-read-map}
+\end{figure}
+
+\input{data/readability.tex}

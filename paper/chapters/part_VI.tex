@@ -1,0 +1,904 @@
+% ===============================================================
+%  PART VI -- Results and Discussion (Chapters 19--20)
+%  Every number in this Part comes from the simulator of Part V.
+%  Plotted data: data/*.dat, written by simulator/make_report_data.py
+% ===============================================================
+
+\newtcolorbox{verdictbox}[2][memGreen]{
+  colback=#1!6, colframe=#1, coltitle=white,
+  colbacktitle=#1, fonttitle=\sffamily\bfseries\small,
+  title={#2}, boxrule=0.6pt, arc=2pt, fontupper=\small,
+  left=6pt, right=6pt, top=4pt, bottom=4pt
+}
+
+\part{Results and Discussion}
+\label{part:results}
+
+\begin{center}
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  part map,
+  [Part VI
+    [Ch.~19: Traffic {\&} Time
+      [H1: $F$ and cores] [Traffic saved] [H2: bytes to time] [AMAT] [Memory bandwidth]]
+    [Ch.~20: Testing the Predictor
+      [Input knob vs DSR] [H3: DSR predicts the saving] [Survival fraction] [H4: when MOESI loses] [Verdicts]]
+  ]
+\end{forest}}
+\end{center}
+
+\begin{keybox}[What Part VI does]
+Part~VI reports what the simulator measured and judges each hypothesis of
+\cref{tab:hypotheses} against it. Chapter~19 covers cost: the size of the
+forced-writeback fraction from 2 to 16 cores (H1), the traffic MOESI removes, and
+whether removed traffic becomes saved time (H2). Chapter~20 tests the Dirty Sharing
+Ratio as a predictor (H3) and looks for conditions under which MOESI does worse
+than MESI (H4). Each section ends with a verdict: held, partly held or failed.
+Unless stated otherwise a number is the mean over three seeds of paired runs
+(\cref{eq:paired}), ``points'' means percentage points, and the experiments are
+those of \cref{tab:experiments}.
+\end{keybox}
+
+% ===============================================================
+%  Chapter 19 -- Traffic, Execution Time and AMAT
+% ===============================================================
+\chapter{Traffic, Execution Time and AMAT from 2 to 16 Cores}
+\label{ch:res-traffic}
+\index{AMAT}%
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  chapter map,
+  [Chapter 19
+    [H1: $F$ and cores [Falls at every mix] [More readers per epoch]]
+    [Traffic saved [Never more bytes] [Memory writes cut]]
+    [H2: bytes to time [Gain follows utilisation] [Saturation limit]]
+    [AMAT {\&} memory [AMAT is not time] [Memory-bound gains most]]
+  ]
+\end{forest}}
+\caption[]{Structure of Chapter~19: the cost of forced
+writebacks (H1), the traffic MOESI removes, and how much of it becomes time (H2).}
+\label{fig:ch19-map}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{H1: The Forced-Writeback Fraction from 2 to 16 Cores}
+\label{sec:res-h1}
+\sectionmap{[H1 [{F at 2, 4, 8, 16 cores}] [Falls at every sharing mix]
+  [{Why: more readers per epoch}] [Verdict: held]]}
+\index{MESI}\index{forced writeback}\index{dirty sharing}\index{dirty epoch}\index{sharing patterns!producer--consumer}\index{sharing patterns!migratory}%
+
+H1 predicted that, for a fixed sharing structure, $F(W,N)$ falls as cores are added,
+because each forced writeback is shared among more read misses.
+\Cref{fig:res-h1}(a) plots $F$ under MESI against the core count for four mixes, from
+almost no dirty sharing ($d=0.005$) to nothing else ($d=1$). Every line falls. The
+fall is steepest when sharing is light: at $d=0.005$, $F$ drops from 17.5\,\% at 2
+cores to 3.7\,\% at 16, almost a factor of five, while at $d=1$ it drops only from
+44.9 to 39.0\,\%. \Cref{tab:res-h1} gives the numbers for workloads with
+$d\ge0.1$, where dirty sharing is a large part of the traffic.
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}[1.0]
+\begin{tikzpicture}
+  \begin{axis}[name=a, width=7.4cm, height=5.6cm,
+      title={\sffamily\small (a) Forced-writeback fraction $F$},
+      xlabel={Cores $N$}, ylabel={$F$ under MESI (\%)},
+      xmode=log, log basis x=2, xtick={2,4,8,16}, xticklabels={2,4,8,16},
+      ymin=0, ymax=50, grid=major, grid style={coreGrey!15},
+      label style={font=\small}, tick label style={font=\scriptsize},
+      legend style={at={(1.08,-0.28)}, anchor=north, legend columns=4, font=\scriptsize, draw=none}]
+    \addplot[very thick, tealC, mark=*] table[x=N, y=d0p005] {data/h1_F_vs_N.dat}; \addlegendentry{$d = 0.005$}
+    \addplot[very thick, plumC, mark=square*] table[x=N, y=d0p02] {data/h1_F_vs_N.dat}; \addlegendentry{$d = 0.02$}
+    \addplot[very thick, amberC, mark=triangle*] table[x=N, y=d0p1] {data/h1_F_vs_N.dat}; \addlegendentry{$d = 0.1$}
+    \addplot[very thick, brickC, mark=diamond*] table[x=N, y=d1] {data/h1_F_vs_N.dat}; \addlegendentry{$d = 1$}
+  \end{axis}
+  \begin{axis}[at={(a.east)}, anchor=west, xshift=1.5cm, width=7.4cm, height=5.6cm,
+      title={\sffamily\small (b) Read misses served by a modified copy},
+      xlabel={Cores $N$}, ylabel={share of read misses (\%)},
+      xmode=log, log basis x=2, xtick={2,4,8,16}, xticklabels={2,4,8,16},
+      ymin=0, ymax=105, grid=major, grid style={coreGrey!15},
+      label style={font=\small}, tick label style={font=\scriptsize}]
+    \addplot[very thick, tealC, mark=*] table[x=N, y=d0p005] {data/h1_dirtyshare_vs_N.dat};
+    \addplot[very thick, plumC, mark=square*] table[x=N, y=d0p02] {data/h1_dirtyshare_vs_N.dat};
+    \addplot[very thick, amberC, mark=triangle*] table[x=N, y=d0p1] {data/h1_dirtyshare_vs_N.dat};
+    \addplot[very thick, brickC, mark=diamond*] table[x=N, y=d1] {data/h1_dirtyshare_vs_N.dat};
+  \end{axis}
+\end{tikzpicture}
+\end{bigfig}
+\caption[H1: forced-writeback fraction against cores]{Experiment T1. (a) The
+forced-writeback fraction falls with the core count at every mix. (b) With more
+cores a smaller share of read misses finds the block modified, because the first
+reader of each epoch has already forced the writeback that cleans it for the rest.
+Means over seeds and producer write probabilities.}
+\label{fig:res-h1}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\caption{H1 in numbers: workloads with $d \ge 0.1$ (36 runs per core count).
+``Dirty share'' is the fraction of read misses served by a modified copy.}
+\label{tab:res-h1}
+\small
+\begin{tabular}{@{}c c c c c c c@{}}
+\toprule
+Cores & Mean $F$ (\%) & Min $F$ & Max $F$ & Dirty share (\%) & $\dsr$ & $\bar b$ (B) \\
+\midrule
+2 & 43.6 & 41.8 & 44.9 & 97.3 & 0.491 & 81.1 \\
+4 & 40.0 & 36.8 & 42.9 & 84.4 & 0.454 & 81.8 \\
+8 & 36.8 & 31.3 & 41.8 & 75.1 & 0.423 & 83.1 \\
+16 & 33.4 & 25.4 & 41.4 & 67.5 & 0.393 & 85.3 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\Cref{fig:res-h1}(b) shows the mechanism proposed in Chapter~16. With two cores, a
+read miss on shared data can only find the block in the one other cache, the
+writer, so 97\,\% of read misses on such data are dirty reads and nearly all of
+them carry a forced writeback. With sixteen cores, the first reader in an epoch
+forces the writeback and the readers after it find a clean block in memory, so only
+67.5\,\% of read misses are dirty reads. The writeback stays at 72 bytes per epoch,
+but it is shared among more 80-byte read misses, so its share falls, exactly as
+$F=72/B(C)$ in \cref{eq:pc-model} falls with more consumers. Producers that write
+more often create more epochs and so raise $F$: at 16 cores, $F$ rises from 31.6 to
+35.3\,\% as the producer write probability goes from 0.15 to 0.5. The largest value
+measured, 44.9\,\%, is the steady-state 72/160 of one producer--consumer or
+migratory hand-off (\cref{tab:dsr-patterns}), and the measured range of 25 to
+45\,\% for $d\ge0.1$ lies inside the 10 to 45\,\% derived in Chapter~10.
+
+\begin{verdictbox}{Verdict on H1: held}
+At every mix $F$ falls steadily from 2 to 16 cores, for the predicted reason. When
+dirty sharing is substantial, the forced writeback is a third to nearly half of
+MESI's coherence traffic (33.4 to 43.6\,\% on average).
+\end{verdictbox}
+
+% ---------------------------------------------------------------
+\section{Traffic Saved by MOESI}
+\label{sec:res-traffic}
+\sectionmap{[Traffic [Never more bytes than MESI] [MESI never more than MSI]
+  [Memory writes cut much more] [Growth with dirty sharing]]}
+\index{MESI}\index{MOESI}\index{MSI}\index{Exclusive state}\index{forced writeback}\index{dirty sharing}%
+
+\Cref{fig:res-traffic} compares the three protocols at 8 cores for four mixes, and
+\cref{tab:res-traffic} averages over all core counts. In all 468 paired traffic
+runs, including the 72 with caches as small as four blocks, MOESI moved no more
+bytes than MESI, as \cref{prop:never-worse} requires. The saving tracks $F$
+closely, within one point in every row of the table; Chapter~20 explains what this
+does and does not show. MESI in turn never moved more bytes than MSI, and up to
+3.5\,\% fewer (3.24\,\% on average with no dirty sharing). That is the \stE\ saving
+of \cref{sec:fam-mesi}: a private block read and then written needs no upgrade in
+MESI. It shrinks to zero as dirty sharing takes over, since shared blocks are never
+in \stE.
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}[1.0]
+\begin{tikzpicture}
+  \begin{axis}[name=a, ybar, bar width=8pt, width=7.6cm, height=5.6cm,
+      title={\sffamily\small (a) Interconnect bytes (MSI $=100$)},
+      xlabel={dirty-sharing share $d$}, ylabel={relative bytes},
+      xtick={0,1,2,3}, xticklabels={0.005, 0.02, 0.1, 0.5},
+      ymin=0, ymax=118, enlarge x limits=0.18, grid=major, grid style={coreGrey!15},
+      label style={font=\small}, tick label style={font=\scriptsize},
+      legend style={at={(1.08,-0.28)}, anchor=north, legend columns=3, font=\scriptsize, draw=none}]
+    \addplot[fill=coreGrey!45, draw=coreGrey] table[x=x, y=msi] {data/traffic_n8.dat}; \addlegendentry{MSI}
+    \addplot[fill=mesiBlue!70, draw=mesiBlue] table[x=x, y=mesi] {data/traffic_n8.dat}; \addlegendentry{MESI}
+    \addplot[fill=moesiOrange!75, draw=moesiOrange] table[x=x, y=moesi] {data/traffic_n8.dat}; \addlegendentry{MOESI}
+  \end{axis}
+  \begin{axis}[at={(a.east)}, anchor=west, xshift=1.5cm, ybar, bar width=10pt, width=7.6cm, height=5.6cm,
+      title={\sffamily\small (b) Bytes written to memory (MESI $=100$)},
+      xlabel={dirty-sharing share $d$}, ylabel={relative bytes},
+      xtick={0,1,2,3}, xticklabels={0.005, 0.02, 0.1, 0.5},
+      ymin=0, ymax=118, enlarge x limits=0.18, grid=major, grid style={coreGrey!15},
+      label style={font=\small}, tick label style={font=\scriptsize},
+      nodes near coords, nodes near coords style={font=\tiny, /pgf/number format/fixed, /pgf/number format/precision=0}]
+    \addplot[fill=mesiBlue!70, draw=mesiBlue] table[x=x, y=memmesi] {data/traffic_n8.dat};
+    \addplot[fill=moesiOrange!75, draw=moesiOrange] table[x=x, y=memmoesi] {data/traffic_n8.dat};
+  \end{axis}
+\end{tikzpicture}
+\end{bigfig}
+\caption[Traffic of the three protocols]{Experiment T1 at 8 cores. (a) MESI moves
+slightly fewer bytes than MSI (the \stE\ state), and MOESI many fewer as dirty
+sharing grows. (b) At $d=0.1$ MOESI writes less than a fifth of what MESI writes to
+memory. MSI writes the same bytes to memory as MESI.}
+\label{fig:res-traffic}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\caption{Traffic results of experiment T1 for selected dirty-sharing shares,
+averaged over 2 to 16 cores (36 runs per row).}
+\label{tab:res-traffic}
+\small
+\begin{tabular}{@{}c c c c c@{}}
+\toprule
+ & & \multicolumn{2}{c}{MOESI saves vs MESI (\%)} & MESI saves \\
+\cmidrule(lr){3-4}
+$d$ & $F$ (\%) & interconnect bytes & memory writes & vs MSI (\%) \\
+\midrule
+0 & 0.0 & 0.0 & --- & 3.24 \\
+0.001 & 1.7 & 1.6 & 3.8 & 3.07 \\
+0.005 & 9.8 & 9.1 & 21.9 & 2.43 \\
+0.01 & 16.0 & 15.3 & 36.7 & 1.98 \\
+0.02 & 22.6 & 22.1 & 52.7 & 1.47 \\
+0.05 & 30.5 & 30.2 & 71.9 & 0.86 \\
+0.1 & 34.8 & 34.6 & 82.8 & 0.53 \\
+0.5 & 39.7 & 39.7 & 95.3 & 0.14 \\
+1 & 41.6 & 41.5 & 99.8 & 0.00 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Memory sees most of the benefit. MOESI's cut in memory writes is about 2.4 times
+its cut in interconnect bytes in every row. In these workloads the private data
+fits in the caches and is rarely evicted, so almost every MESI memory write is a
+forced writeback, and removing forced writebacks removes most memory writes:
+82.8\,\% at $d=0.1$ and 99.8\,\% at $d=1$. Whether that saves time depends on
+whether memory is a bottleneck (\cref{sec:res-memory}).
+
+% ---------------------------------------------------------------
+\section{H2: From Traffic to Execution Time}
+\label{sec:res-h2}
+\sectionmap{[H2 [Load sweep E1] [Gain follows utilisation]
+  [Queueing explains it] [Saturation limit confirmed] [Verdict: held]]}
+\index{MESI}\index{MOESI}\index{forced writeback}\index{bus utilisation}\index{Effect A and Effect B}%
+
+H2 predicted that MOESI's time gain is near zero at low bus utilisation and rises
+towards the ratio of bus-busy times, $C_{\mathrm{bus}}(\mathrm{MESI}) /
+C_{\mathrm{bus}}(\mathrm{MOESI})$ (\cref{eq:sat-limit}), as utilisation nears
+100\,\%. Experiment E1 keeps the workload fixed ($d=0.5$) and changes only how long
+each core computes between memory operations, from 2000 cycles (an idle bus) to 2
+(a saturated one). \Cref{fig:res-h2}(a) plots the time reduction against MESI's bus
+utilisation, and \cref{tab:res-h2} gives the 8-core numbers.
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}[1.0]
+\begin{tikzpicture}
+  \begin{axis}[name=a, width=7.4cm, height=5.6cm,
+      title={\sffamily\small (a) Time saved by MOESI},
+      xlabel={MESI bus utilisation (\%)}, ylabel={execution-time reduction (\%)},
+      xmin=0, xmax=100, ymin=0, ymax=31, grid=major, grid style={coreGrey!15},
+      label style={font=\small}, tick label style={font=\scriptsize},
+      legend style={at={(0.03,0.97)}, anchor=north west, font=\scriptsize, draw=none, fill=white, fill opacity=0.8, text opacity=1}]
+    \addplot[very thick, mesiBlue, mark=*] table[x=Um, y=red] {data/e1_serial_N8.dat}; \addlegendentry{$N=8$, serial}
+    \addplot[very thick, mesiBlue, dashed, mark=o] table[x=Um, y=red] {data/e1_overlap_N8.dat}; \addlegendentry{$N=8$, overlapped}
+    \addplot[very thick, moesiOrange, mark=square*] table[x=Um, y=red] {data/e1_serial_N16.dat}; \addlegendentry{$N=16$, serial}
+    \addplot[very thick, moesiOrange, dashed, mark=square] table[x=Um, y=red] {data/e1_overlap_N16.dat}; \addlegendentry{$N=16$, overlapped}
+  \end{axis}
+  \begin{axis}[at={(a.east)}, anchor=west, xshift=2.2cm, width=7.4cm, height=5.6cm,
+      title={\sffamily\small (b) Waiting for the bus},
+      xlabel={bus utilisation of that protocol (\%)}, ylabel={mean wait per transaction (cycles)},
+      xmin=0, xmax=100, ymode=log, ymin=0.05, ymax=200, grid=major, grid style={coreGrey!15},
+      label style={font=\small}, tick label style={font=\scriptsize},
+      legend style={at={(0.03,0.97)}, anchor=north west, font=\scriptsize, draw=none, fill=white, fill opacity=0.8, text opacity=1}]
+    \addplot[very thick, mesiBlue, mark=*] table[x=Um, y=Wm] {data/e1_serial_N8.dat}; \addlegendentry{MESI, $N=8$}
+    \addplot[very thick, moesiOrange, mark=square*] table[x=Uo, y=Wo] {data/e1_serial_N8.dat}; \addlegendentry{MOESI, $N=8$}
+    \addplot[thick, mesiBlue!60, dashed, mark=o] table[x=Um, y=Wm] {data/e1_serial_N16.dat}; \addlegendentry{MESI, $N=16$}
+    \addplot[thick, moesiOrange!70, dashed, mark=square] table[x=Uo, y=Wo] {data/e1_serial_N16.dat}; \addlegendentry{MOESI, $N=16$}
+  \end{axis}
+\end{tikzpicture}
+\end{bigfig}
+\caption[H2: time saved against bus utilisation]{Experiment E1. (a) MOESI's time
+gain is negligible on a lightly used bus and grows steeply as the bus fills.
+(b) Waiting grows sharply with utilisation and both protocols lie on one curve;
+MOESI sits further left because each of its dirty reads holds the bus for 12 cycles
+instead of 22. Mean of three seeds, $d=0.5$.}
+\label{fig:res-h2}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\caption{Experiment E1 at 8 cores, serial writeback. ``Converted'' is the share of
+the byte saving that appears as time saving. The last two columns compare the
+speed-up with the limit of \cref{eq:sat-limit}.}
+\label{tab:res-h2}
+\small
+\begin{tabular}{@{}r c c c c c c c@{}}
+\toprule
+Think & \multicolumn{2}{c}{Bus utilisation (\%)} & Bytes saved & Time saved & Converted & Speed-up & $C_{\mathrm{bus}}$ ratio \\
+\cmidrule(lr){2-3}
+(cycles) & MESI & MOESI & (\%) & (\%) & (\%) & & \\
+\midrule
+2000 & 2.5 & 1.7 & 32.6 & 0.3 & 1 & 1.003 & 1.459 \\
+600 & 8.1 & 5.6 & 32.6 & 0.9 & 3 & 1.009 & 1.458 \\
+300 & 15.5 & 10.8 & 32.4 & 1.8 & 6 & 1.019 & 1.454 \\
+150 & 28.5 & 20.4 & 32.3 & 3.7 & 11 & 1.039 & 1.452 \\
+80 & 46.2 & 34.3 & 31.9 & 6.8 & 21 & 1.073 & 1.445 \\
+40 & 69.3 & 55.4 & 31.3 & 12.6 & 40 & 1.144 & 1.432 \\
+20 & 87.0 & 77.1 & 30.8 & 20.7 & 67 & 1.260 & 1.422 \\
+10 & 95.4 & 91.3 & 30.2 & 25.9 & 86 & 1.350 & 1.411 \\
+5 & 98.0 & 96.8 & 30.0 & 28.0 & 93 & 1.388 & 1.406 \\
+2 & 98.9 & 98.3 & 29.7 & 28.2 & 95 & 1.393 & 1.402 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+MOESI removes about 30\,\% of the bytes at every load, yet the time it saves ranges
+from 0.3 to 28.2\,\%. Below 35\,\% bus utilisation it saves at most 3.7\,\% of the
+time at 8 cores and 2.4\,\% at 16; above 65\,\% it saves 12.6 to 28.2\,\%. Put
+another way, about 1\,\% of the saved bytes turn into saved time on an idle bus and
+95\,\% on a saturated one. \Cref{fig:res-h2}(b) shows why. The mean wait for the bus
+grows from a fraction of a cycle at low utilisation to tens of cycles near
+100\,\%, as \cref{eq:util} suggests, and MESI and MOESI lie on the same curve, so
+neither waits less at a given utilisation. MOESI wins because it does the same work
+at a lower utilisation. At 8 cores with 40 cycles of computation, MESI's bus is
+69\,\% busy and a transaction waits 11.0 cycles on average, while MOESI's is 55\,\%
+busy and waits 4.6. On an idle bus there is no waiting to remove, and the only gain
+left is the 9-cycle writeback of each dirty read (Effect~A of
+\cref{fig:two-effects}), which is tiny next to the computation.
+
+The last two columns of \cref{tab:res-h2} confirm the saturation limit of
+\cref{eq:sat-limit}: a speed-up of 1.393 against a bus-busy ratio of 1.402 at 8
+cores, and 1.318 against 1.319 at 16. At low load the ratio is still about 1.46,
+since MOESI keeps the bus a third less busy, but the speed-up is 1.003. Whether the
+MESI reader waits for the writeback (\cref{fig:sim-wbmode}) matters little: at 8
+cores and moderate load MOESI saves 12.6\,\% of the time in serial mode and 11.0\,\%
+in overlapped mode, and both reach 28.2\,\% at saturation. The forced writeback
+costs time mainly through the bus time it takes up, not through the latency it adds
+to one read. The 16-core curves rise at lighter per-core loads than the 8-core
+ones, because twice the cores reach saturation at half the per-core demand
+(\cref{eq:util}).
+
+\begin{verdictbox}{Verdict on H2: held}
+Saved traffic becomes saved time in proportion to how busy the bus is: about 1\,\%
+of the byte saving at 2.5\,\% utilisation, 40\,\% at 69\,\% and 95\,\% at
+saturation, where the speed-up reaches the bus-occupancy limit. A comparison run on
+a lightly loaded system will see almost no difference in time, however many bytes
+are saved.
+\end{verdictbox}
+
+% ---------------------------------------------------------------
+\section{AMAT, Scaling with Cores and Memory Bandwidth}
+\label{sec:res-amat}
+\label{sec:res-memory}
+\sectionmap{[AMAT and memory [Experiment E2] [Idle latencies match the report]
+  [AMAT is not execution time] [E5: memory-bound gains most]]}
+\index{MESI}\index{MOESI}\index{forced writeback}\index{Dirty Sharing Ratio}\index{dirty epoch}\index{AMAT}\index{bus utilisation}\index{owner}\index{Effect A and Effect B}%
+
+Experiment E2 runs the same workload on 2 to 16 cores at a light and a heavy load
+(\cref{fig:res-amat,tab:res-amat}). On a lightly loaded bus with two cores a dirty
+read takes 61.1 cycles under MESI and 52.0 under MOESI, within a fraction of a
+cycle of $T_{L1}+T_{\mathrm{coh}}=61$ and $T_{L1}+T_{\mathrm{c2c}}=52$
+(\cref{tab:sim-latency}). As cores and load grow, queueing adds to both and more to
+MESI: at 16 cores under heavy load a dirty read takes 125.5 cycles under MESI and
+86.6 under MOESI.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[c]{0.52\linewidth}\centering
+\begin{tikzpicture}
+  \begin{axis}[width=\linewidth, height=5.4cm,
+      xlabel={Cores $N$}, ylabel={measured AMAT (cycles)},
+      xmode=log, log basis x=2, xtick={2,4,8,16}, xticklabels={2,4,8,16},
+      ymin=0, ymax=85, grid=major, grid style={coreGrey!15},
+      label style={font=\footnotesize}, tick label style={font=\scriptsize},
+      legend style={at={(0.03,0.97)}, anchor=north west, font=\tiny, draw=none, fill=white}]
+    \addplot[very thick, mesiBlue, mark=*] table[x=N, y=Am] {data/e2_heavy.dat}; \addlegendentry{MESI, heavy (think 40)}
+    \addplot[very thick, moesiOrange, mark=square*] table[x=N, y=Ao] {data/e2_heavy.dat}; \addlegendentry{MOESI, heavy}
+    \addplot[thick, dashed, mesiBlue, mark=o] table[x=N, y=Am] {data/e2_light.dat}; \addlegendentry{MESI, light (think 300)}
+    \addplot[thick, dashed, moesiOrange, mark=square] table[x=N, y=Ao] {data/e2_light.dat}; \addlegendentry{MOESI, light}
+  \end{axis}
+\end{tikzpicture}
+\caption[AMAT against cores]{Experiment E2: AMAT grows with cores and the MESI--MOESI
+gap widens as the bus gets busier. $d=0.5$.}
+\label{fig:res-amat}
+\end{minipage}\hfill
+\begin{minipage}[c]{0.45\linewidth}\centering
+\begin{tikzpicture}
+  \begin{axis}[ybar, bar width=7pt, width=\linewidth, height=5.4cm,
+      xlabel={memory-port occupancy (cycles)},
+      ylabel={memory-port utilisation (\%)},
+      xtick={0,1,2,3}, xticklabels={5,10,20,40},
+      ymin=0, ymax=125, enlarge x limits=0.15, grid=major, grid style={coreGrey!15},
+      label style={font=\footnotesize}, tick label style={font=\scriptsize},
+      legend style={at={(0.03,0.97)}, anchor=north west, font=\tiny, draw=none, fill=white}]
+    \addplot[fill=mesiBlue!70, draw=mesiBlue] table[x=x, y=MUm] {data/e5_memport.dat}; \addlegendentry{MESI}
+    \addplot[fill=moesiOrange!75, draw=moesiOrange] table[x=x, y=MUo] {data/e5_memport.dat}; \addlegendentry{MOESI}
+    \node[font=\tiny, text=memGreen!70!black] at (axis cs:0,28) {$-12.6\%$};
+    \node[font=\tiny, text=memGreen!70!black] at (axis cs:1,45) {$-12.6\%$};
+    \node[font=\tiny, text=memGreen!70!black] at (axis cs:2,78) {$-13.6\%$};
+    \node[font=\tiny\bfseries, text=memGreen!70!black] at (axis cs:3,109) {$-35.9\%$};
+  \end{axis}
+\end{tikzpicture}
+\caption[Memory-port utilisation]{Experiment E5 (8 cores, think 40, $d=0.5$):
+memory-port use, with MOESI's time reduction above each pair.}
+\label{fig:res-memory}
+\end{minipage}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\caption{Experiment E2: AMAT and dirty-read latency (cycles), with the
+execution-time reduction for comparison.}
+\label{tab:res-amat}
+\small
+\begin{tabular}{@{}l c c c c c c c c@{}}
+\toprule
+Load & $N$ & Bus util. & \multicolumn{3}{c}{AMAT} &
+  \multicolumn{2}{c}{Dirty-read latency} & Time \\
+\cmidrule(lr){4-6}\cmidrule(lr){7-8}
+ & & MESI (\%) & MESI & MOESI & cut (\%) & MESI & MOESI & cut (\%) \\
+\midrule
+light & 2 & 2.8 & 14.4 & 12.8 & 11.2 & 61.1 & 52.0 & 0.5 \\
+light & 4 & 7.1 & 22.3 & 18.1 & 18.7 & 61.5 & 52.2 & 1.3 \\
+light & 8 & 15.5 & 29.0 & 22.6 & 21.9 & 62.4 & 52.6 & 1.8 \\
+light & 16 & 32.5 & 37.6 & 28.7 & 23.7 & 64.7 & 53.8 & 2.4 \\
+\midrule
+heavy & 2 & 15.7 & 14.5 & 12.9 & 11.2 & 61.8 & 52.3 & 3.0 \\
+heavy & 4 & 35.8 & 23.8 & 18.8 & 21.1 & 64.0 & 53.2 & 8.0 \\
+heavy & 8 & 69.3 & 35.0 & 25.2 & 27.9 & 71.2 & 56.5 & 12.6 \\
+heavy & 16 & 97.0 & 78.6 & 50.2 & 36.0 & 125.5 & 86.6 & 23.8 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+MOESI lowers AMAT by 11 to 36\,\%, far more than it lowers execution time (0.5 to
+23.8\,\%). AMAT averages memory operations only, while execution time also includes
+the computation between them, which dominates at light load. And part of the AMAT
+cut is Effect~B of \cref{fig:two-effects}: under MOESI the readers after the first
+in each epoch are served by the owner in 51 cycles instead of by memory in 100. The
+example of \cref{tab:amat-compare} counted Effect~A alone and predicted an AMAT cut
+below 10\,\%; the measured cut is larger because of Effect~B. This is why
+Chapter~16 kept the two effects apart: only Effect~A is the forced writeback.
+
+Experiment E5 varies how long the memory port is busy per 64-byte access, from 5
+cycles (fast memory) to 40 (slow memory) (\cref{fig:res-memory}). With fast memory
+the bus is the bottleneck and MOESI saves the same 12.6\,\% as in E1. The memory
+port, though, is 17 to 98\,\% busy under MESI across the four settings and 2 to
+16\,\% under MOESI, because every forced writeback is also a memory write. At 40
+cycles per access MESI saturates the port (98\,\% busy), requests queue at memory,
+the bus sits idle half the time (its utilisation falls from 69 to 50\,\%), and
+MOESI, which hardly uses the port, finishes 35.9\,\% sooner. This is the
+memory-bandwidth argument of Chapter~9 in numbers: the forced writeback costs time
+wherever bandwidth is scarce, on the bus or at memory.
+
+% ===============================================================
+%  Chapter 20 -- Testing the Dirty Sharing Ratio
+% ===============================================================
+\chapter{Testing the Dirty Sharing Ratio}
+\label{ch:res-dsr}
+\index{Dirty Sharing Ratio}%
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  chapter map,
+  [Chapter 20
+    [Why not the input knob [$d$ is far from linear]]
+    [H3: DSR as predictor [One straight line] [Three cross-checks]]
+    [Survival {\&} small caches [$\sigma$ stays near 1] [DSR carries the effect]]
+    [H4: when MOESI loses [Never in bytes] [Slow cache-to-cache]]
+    [What it means [Published studies] [Design rule] [Verdicts]]
+  ]
+\end{forest}}
+\caption[]{Structure of Chapter~20: why a measured ratio is
+needed, how well DSR predicts MOESI's saving, what small caches do, and when MOESI
+is slower than MESI.}
+\label{fig:ch20-map}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{Why the Input Knob Is Not a Predictor}
+\label{sec:res-knob}
+\sectionmap{[Input knob [d describes the program] [Saving saturates in d]
+  [{Same d, different savings}] [Need a measured ratio]]}
+
+The generator's knob $d$, the share of operations that touch dirty-shared data, is
+the obvious measure of how much a program shares, so we checked it first
+(\cref{fig:res-knob}). The curve is far from straight: the saving rises fast at
+small $d$ and levels off near 40\,\%, so the correlation between $d$ and the saving
+is only 0.64 (0.93 with $d$ on a log scale). At a given $d$ the saving also depends
+strongly on the core count, and at $d=0.1$ single runs range from 25.2 to 42.0\,\%.
+Both problems have the cause found in \cref{sec:dsr-patterns}: what matters is how
+many transactions the shared accesses produce, not how many accesses there are
+(\cref{eq:dsr-mix}).
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}
+  \begin{axis}[width=10cm, height=5.2cm,
+      xlabel={dirty-sharing share of operations, $d$ (log scale)}, ylabel={MOESI saving $S_B$ (\%)},
+      xmode=log, xmin=0.0008, xmax=1.2, ymin=0, ymax=48, grid=major, grid style={coreGrey!15},
+      label style={font=\small}, tick label style={font=\scriptsize},
+      legend style={at={(0.03,0.97)}, anchor=north west, font=\scriptsize, draw=none, fill=white}]
+    \addplot[very thick, skyC, mark=*] table[x=d, y=N2] {data/S_vs_d.dat}; \addlegendentry{$N=2$}
+    \addplot[very thick, leafC, mark=square*] table[x=d, y=N4] {data/S_vs_d.dat}; \addlegendentry{$N=4$}
+    \addplot[very thick, amberC, mark=triangle*] table[x=d, y=N8] {data/S_vs_d.dat}; \addlegendentry{$N=8$}
+    \addplot[very thick, roseC, mark=diamond*] table[x=d, y=N16] {data/S_vs_d.dat}; \addlegendentry{$N=16$}
+  \end{axis}
+\end{tikzpicture}
+\caption[Saving against the input knob]{Experiment T1. MOESI's saving rises steeply
+at small $d$ and then levels off, and the same $d$ gives different savings at
+different core counts.}
+\label{fig:res-knob}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{H3: DSR Predicts the Traffic Saving}
+\label{sec:res-h3}
+\sectionmap{[H3 [Scatter of 360 runs] [{One line, $r = 0.990$}] [{Slope falls with N}]
+  [Three cross-checks] [Verdict: held]]}
+\index{MESI}\index{MOESI}\index{forced writeback}\index{dirty sharing}\index{Dirty Sharing Ratio}\index{survival fraction}\index{verification}%
+
+H3 predicted that the saving obeys $S_B=\sigma\cdot72\,\dsr/\bar b$
+(\cref{eq:identity}) exactly, and that with $\sigma$ near 1 and $\bar b$ nearly
+constant, DSR measured under MESI predicts it through a straight line
+(\cref{eq:predictor}). \Cref{fig:res-dsr} plots the saving of every run with any
+dirty sharing (360 runs) against its DSR. Unlike \cref{fig:res-knob}, the points
+lie close to one line for all four core counts. \Cref{tab:res-dsr} gives the fits.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}
+  \begin{axis}[width=11.5cm, height=6.6cm,
+      xlabel={Dirty Sharing Ratio measured under MESI}, ylabel={MOESI traffic saving $S_B$ (\%)},
+      xmin=0, xmax=0.52, ymin=-2, ymax=48, grid=major, grid style={coreGrey!15},
+      xtick={0,0.1,0.2,0.3,0.4,0.5},
+      xticklabel style={/pgf/number format/fixed, /pgf/number format/precision=1},
+      label style={font=\small}, tick label style={font=\scriptsize},
+      legend style={at={(0.02,0.98)}, anchor=north west, font=\scriptsize, draw=none, fill=white, fill opacity=0.85, text opacity=1}]
+    \addplot[only marks, mark=*, mark size=1.4pt, skyC, fill opacity=0.6, draw opacity=0.6] table[x=DSR, y=S] {data/dsr_scatter_N2.dat}; \addlegendentry{$N=2$}
+    \addplot[only marks, mark=square*, mark size=1.3pt, leafC, fill opacity=0.6, draw opacity=0.6] table[x=DSR, y=S] {data/dsr_scatter_N4.dat}; \addlegendentry{$N=4$}
+    \addplot[only marks, mark=triangle*, mark size=1.6pt, amberC, fill opacity=0.6, draw opacity=0.6] table[x=DSR, y=S] {data/dsr_scatter_N8.dat}; \addlegendentry{$N=8$}
+    \addplot[only marks, mark=diamond*, mark size=1.6pt, roseC, fill opacity=0.6, draw opacity=0.6] table[x=DSR, y=S] {data/dsr_scatter_N16.dat}; \addlegendentry{$N=16$}
+    \addplot[very thick, black, dashed, domain=0.04:0.52] {92.55*x - 3.63}; \addlegendentry{fit: $S_B = 92.6\,\dsr - 3.6$}
+    \addplot[thick, plumC, domain=0:0.52] {90*x}; \addlegendentry{identity, $\bar b = 80$\,B, $\sigma = 1$}
+  \end{axis}
+\end{tikzpicture}
+\caption[H3: saving against DSR]{Experiment T1, all 360 runs with any dirty
+sharing. One straight line in DSR fits every core count (Pearson $r=0.990$). The
+purple line is \cref{eq:identity} with $\bar b=80$\,B and $\sigma=1$, the values of
+the pure dirty-sharing patterns.}
+\label{fig:res-dsr}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\caption{Straight-line fits $S_B = a\cdot\dsr + b$ (saving in \%), with errors in
+points. ``Held out'' fits the line on the other three core counts and predicts this
+one.}
+\label{tab:res-dsr}
+\small
+\begin{tabular}{@{}l c c c c c c c@{}}
+\toprule
+ & Slope $a$ & Intercept $b$ & $r$ & Mean error & Max error & \multicolumn{2}{c}{Held out: mean / max} \\
+\midrule
+$N=2$  & 97.6 & $-5.9$ & 0.989 & 1.89 & 4.24 & 2.08 & 5.24 \\
+$N=4$  & 94.5 & $-4.3$ & 0.990 & 1.85 & 3.37 & 1.86 & 3.62 \\
+$N=8$  & 91.7 & $-3.3$ & 0.991 & 1.76 & 3.20 & 1.75 & 3.26 \\
+$N=16$ & 89.1 & $-2.5$ & 0.991 & 1.61 & 2.90 & 1.78 & 3.96 \\
+\midrule
+All    & 92.6 & $-3.6$ & 0.990 & 1.84 & 5.10 & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+One line fitted to all 360 runs predicts the saving with a mean error of 1.84
+points; 95\,\% of runs are within 3.56 points and the worst is 5.10 points off. A
+separate line per core count does slightly better (mean error 1.61 to 1.89 points,
+worst 4.24). The identity makes the slope proportional to $1/\bar b$, and $\bar b$
+rises with the core count (\cref{tab:res-h1}), so the slope falls from 97.6 at 2
+cores to 89.1 at 16. The fitted slopes are also steeper, with negative intercepts,
+than a line of slope $7200/\bar b$ through the origin, because $\bar b$ is not
+constant within a core count. Workloads with little dirty sharing have a larger
+$\bar b$ (up to 137\,B, since private misses and evictions add bytes without dirty
+reads), while workloads dominated by dirty sharing approach the 80\,B of the pure
+patterns. The saving therefore rises a little faster than linearly in DSR, and the
+best straight line starts below zero.
+
+A predictor has to work on data it was not fitted to, and we tested this three
+ways. A line fitted on three core counts predicts the fourth with a mean error of
+1.75 to 2.08 points and a worst error of 5.24 (\cref{tab:res-dsr}, last columns). A
+per-core-count line fitted on two seeds predicts the third with a mean error of 1.73
+to 1.84 points. And the line fitted on the 64\,KB runs of T1 predicts the 72 runs
+of T2, with caches from 4 to 1024 blocks, with a mean error of 1.40 points and a
+worst of 3.01. In every case the error on unseen data is close to the error on the
+fitted data, so the line is not just memorising the runs it was fitted to.
+
+The identity itself held to rounding error in all 468 traffic runs
+(\cref{tab:verify-identities}). With $\bar b$ measured alongside DSR and $\sigma$
+taken as 1, it predicts the saving with a mean error of 0.31 points and a worst of
+1.85, always a slight overestimate. That is much better than the line, but it tells
+us little: $72\,\dsr/\bar b$ is exactly the forced-writeback fraction $F$, so this
+prediction only says that MOESI removes nearly all forced writebacks ($\sigma$
+between 0.83 and 1), which in a byte-counting model is close to true by
+construction. The useful result is the straight line, which needs only the two
+counters of \cref{fig:dsr-counter}. Whether it carries over to real programs, with
+their timing and working sets, needs real traces (Chapter~22).
+
+\begin{verdictbox}{Verdict on H3: held (within this model)}
+The identity held exactly in every run. DSR alone, through one straight line,
+predicted MOESI's traffic saving to within 1.84 points on average, with the same
+accuracy on core counts, traces and cache sizes it was not fitted to. The slope
+depends on $\bar b$, so the line should be fitted for each system.
+\end{verdictbox}
+
+% ---------------------------------------------------------------
+\section{The Survival Fraction and Small Caches}
+\label{sec:res-sigma}
+\sectionmap{[Survival [sigma between 0.83 and 1] [Small caches cut the saving]
+  [{Mainly through DSR, not sigma}] [Deferred write backs appear]]}
+\index{MESI}\index{MOESI}\index{Dirty Sharing Ratio}\index{survival fraction}\index{dirty epoch}\index{owner}%
+
+Part~IV expected small caches to reduce MOESI's gain by lowering $\sigma$, since an
+owner evicted before the next write pays the writeback late instead of never
+(\cref{fig:sigma-tree}). Experiment T2 tests this at 8 cores with caches of 4 to
+1024 blocks (\cref{fig:res-sigma,tab:res-sigma}).
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}[1.0]
+\begin{tikzpicture}
+  \begin{axis}[name=a, width=7.4cm, height=5.6cm,
+      title={\sffamily\small (a) Dirty Sharing Ratio},
+      xlabel={cache capacity (blocks)}, ylabel={$\dsr$ under MESI},
+      xmode=log, log basis x=2, xtick={4,16,64,256,1024}, xticklabels={4,16,64,256,1024},
+      ymin=0, ymax=0.5, grid=major, grid style={coreGrey!15},
+      yticklabel style={/pgf/number format/fixed, /pgf/number format/precision=1},
+      label style={font=\small}, tick label style={font=\scriptsize},
+      legend style={at={(1.08,-0.28)}, anchor=north, legend columns=3, font=\scriptsize, draw=none}]
+    \addplot[very thick, mesiBlue, mark=*] table[x=cap, y=dsrd0p2] {data/t2_cache.dat}; \addlegendentry{$d=0.2$}
+    \addplot[very thick, memGreen, mark=square*] table[x=cap, y=dsrd0p5] {data/t2_cache.dat}; \addlegendentry{$d=0.5$}
+    \addplot[very thick, moesiOrange, mark=triangle*] table[x=cap, y=dsrd0p8] {data/t2_cache.dat}; \addlegendentry{$d=0.8$}
+  \end{axis}
+  \begin{axis}[at={(a.east)}, anchor=west, xshift=1.5cm, width=7.4cm, height=5.6cm,
+      title={\sffamily\small (b) Survival fraction $\sigma$},
+      xlabel={cache capacity (blocks)}, ylabel={$\sigma$},
+      xmode=log, log basis x=2, xtick={4,16,64,256,1024}, xticklabels={4,16,64,256,1024},
+      ymin=0, ymax=1.05, grid=major, grid style={coreGrey!15},
+      yticklabel style={/pgf/number format/fixed, /pgf/number format/precision=1},
+      label style={font=\small}, tick label style={font=\scriptsize}]
+    \addplot[very thick, mesiBlue, mark=*] table[x=cap, y=sigd0p2] {data/t2_cache.dat};
+    \addplot[very thick, memGreen, mark=square*] table[x=cap, y=sigd0p5] {data/t2_cache.dat};
+    \addplot[very thick, moesiOrange, mark=triangle*] table[x=cap, y=sigd0p8] {data/t2_cache.dat};
+  \end{axis}
+\end{tikzpicture}
+\end{bigfig}
+\caption[DSR and survival fraction against cache size]{Experiment T2, 8 cores.
+(a) Small caches lower DSR sharply: owners are evicted before other cores read their
+data. (b) The survival fraction falls much less, from about 1 to about 0.89.}
+\label{fig:res-sigma}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\caption{Experiment T2 at $d = 0.5$: what small caches change. Eviction writebacks
+are totals per run.}
+\label{tab:res-sigma}
+\small
+\begin{tabular}{@{}r c c c c c c@{}}
+\toprule
+Capacity & MESI hit rate & $\dsr$ & $\sigma$ & MOESI saving & \multicolumn{2}{c}{Eviction writebacks} \\
+\cmidrule(lr){6-7}
+(blocks) & (\%) & & & (\%) & MESI & MOESI \\
+\midrule
+4 & 22.1 & 0.124 & 0.895 & 8.2 & 12,292 & 12,976 \\
+8 & 24.5 & 0.190 & 0.890 & 13.2 & 8,146 & 9,286 \\
+16 & 29.4 & 0.248 & 0.893 & 18.1 & 4,630 & 6,068 \\
+32 & 38.6 & 0.286 & 0.939 & 22.4 & 3,472 & 4,337 \\
+64 & 52.3 & 0.336 & 0.994 & 28.1 & 3,027 & 3,094 \\
+128 & 67.0 & 0.422 & 0.999 & 36.8 & 468 & 468 \\
+256 & 68.0 & 0.429 & 0.999 & 37.8 & 0 & 0 \\
+1024 & 68.0 & 0.429 & 0.999 & 37.8 & 0 & 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+As the cache shrinks from 256 to 4 blocks, MOESI's saving falls from 37.8 to
+8.2\,\%. Some of this is $\sigma$, which falls from 0.999 to 0.895: about one
+dirty-read epoch in ten now ends with the owner evicted, and MOESI makes more
+eviction writebacks than MESI (12,976 against 12,292 at 4 blocks). Those
+writebacks were deferred, not removed, as \cref{sec:own-moesi} warned. Most of the
+fall, though, comes from DSR, which drops from 0.429 to 0.124. With tiny caches the
+writer's copy is often evicted, and written back by both protocols, before another
+core reads it, so the reader finds the block in memory and neither protocol has a
+dirty read. Capacity misses also add many ordinary transactions that dilute the
+dirty reads. Because the effect of cache size shows up in DSR itself, the DSR line
+still predicts the saving when caches shrink, which is why the third cross-check of
+\cref{sec:res-h3} worked. In T1, with 64\,KB caches, $\sigma$ ranged from 0.83 to 1
+with a mean of 0.97. Its lowest values came at the smallest $d$, where a run has few
+dirty epochs and the writebacks charged at the end weigh more.
+
+% ---------------------------------------------------------------
+\section{H4: When Does MOESI Lose?}
+\label{sec:res-h4}
+\sectionmap{[H4 [Never in bytes] [Never in time with report latencies]
+  [{Loses when cache-to-cache is slow}] [Effect B] [Verdict: held]]}
+\index{MESI}\index{MOESI}\index{Dirty Sharing Ratio}\index{survival fraction}\index{dirty epoch}\index{cache-to-cache transfer}\index{owner}\index{Effect A and Effect B}%
+
+H4 predicted that MOESI never moves more bytes than MESI and can take more time only
+through Effect~B (a cache-to-cache read slower than a memory read) or owner
+contention, and that small caches lower the gain without reversing it. MOESI moved
+no more bytes than MESI in any of the 468 traffic runs or 288 timing runs,
+including the smallest caches. With $T_{\mathrm{coh}}=60$ it was also faster than
+MESI in all 228 timing runs of E1, E2, E3 and E5. In experiment E3
+(\cref{fig:res-h4}a) small caches shrink the time gain as they shrank the traffic
+gain, but at the worst point (4 blocks, $d=0.2$) MOESI is still 0.3\,\% faster.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[t]{0.47\linewidth}
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{tikzpicture}
+  \begin{axis}[width=7.6cm, height=6.4cm,
+      title={\sffamily\small (a) Cache capacity (E3)},
+      xlabel={cache capacity (blocks)}, ylabel={execution-time reduction (\%)},
+      xmode=log, log basis x=2, xtick={4,16,64,256,1024}, xticklabels={4,16,64,256,1024},
+      xmin=3, xmax=1400, ymin=-1, ymax=20, grid=major, grid style={coreGrey!15},
+      label style={font=\small}, tick label style={font=\scriptsize},
+      legend style={at={(0.97,0.03)}, anchor=south east, font=\scriptsize, draw=none, fill=white}]
+    \addplot[very thick, mesiBlue, mark=*] table[x=cap, y=redd0p2] {data/e3_cache.dat}; \addlegendentry{$d=0.2$}
+    \addplot[very thick, memGreen, mark=square*] table[x=cap, y=redd0p5] {data/e3_cache.dat}; \addlegendentry{$d=0.5$}
+    \addplot[very thick, moesiOrange, mark=triangle*] table[x=cap, y=redd0p8] {data/e3_cache.dat}; \addlegendentry{$d=0.8$}
+    \addplot[thick, dashed, coreGrey, forget plot] coordinates {(3,0) (1400,0)};
+  \end{axis}
+\end{tikzpicture}}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.51\linewidth}
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{tikzpicture}[font=\sffamily\scriptsize,
+    cell/.style={draw=white, line width=1pt, minimum width=1.6cm, minimum height=0.75cm, font=\sffamily\small}]
+  \node[font=\sffamily\small] at (2.4,1.45) {(b) Latency sensitivity (E4)};
+  \node[font=\sffamily\scriptsize] at (2.4,1.05) {owner-port occupancy (cycles)};
+  \input{data/e4_cells.tex}
+  \node[font=\sffamily\scriptsize, rotate=90] at (-3.55,-1.5) {$T_{\mathrm{coh}}$ (c2c latency)};
+  \draw[very thick, memGreen] (-0.82,-2.63) rectangle (5.62,-1.87);
+  \node[font=\sffamily\tiny, text=coreGrey, align=center] at (2.4,-4.05) {cells: MOESI execution-time reduction (\%);\\blue = MOESI faster, red = MOESI slower;\\green frame = the report's $T_{\mathrm{coh}} = 60$};
+\end{tikzpicture}}
+\end{minipage}
+\caption[H4: when MOESI loses]{(a) Experiment E3: small caches reduce MOESI's time
+gain but never reverse it. (b) Experiment E4: MOESI becomes slower only when the
+cache-to-cache latency is well above the 100-cycle memory latency. Rows:
+$T_{\mathrm{coh}}$ and the resulting cache-to-cache latency; columns: owner-port
+occupancy. 8 cores, $d=0.5$, means of three seeds.}
+\label{fig:res-h4}
+\end{figure}
+
+Experiment E4 raises the cost of a cache-to-cache transfer (\cref{fig:res-h4}b).
+MOESI's advantage shrinks steadily as $T_{\mathrm{coh}}$ rises, reaches zero near
+$T_{\mathrm{coh}}=150$ (a 141-cycle cache-to-cache read against 100 cycles from
+memory), and becomes a loss of up to 5.7\,\% on average and 5.9\,\% in the worst run
+at $T_{\mathrm{coh}}=200$. MOESI was slower in 16 of the 60 E4 runs, all at
+$T_{\mathrm{coh}}\ge150$. The time the owner's cache spends supplying a block
+matters much less: raising it from 5 to 40 cycles lowers each row by at most 1.6
+points. \Cref{tab:res-effectb} shows the mechanism is Effect~B. Under MOESI the
+owner answers every read in an epoch, so it supplies about 45\,\% more reads than
+MESI's dirty reads, and MESI served those extra reads from memory. With a 191-cycle
+cache-to-cache read, each of them is 91 cycles slower than a memory read would have
+been. At $T_{\mathrm{coh}}=200$ MOESI's dirty reads are still faster than MESI's
+(194.8 against 207.0 cycles), yet the run as a whole is slower, so a study that
+measured only the read MOESI was designed to improve would miss the loss.
+
+\begin{table}[htbp]
+\centering
+\caption{Experiment E4, means over the four owner-port occupancies. ``Reads from a
+cache'' counts read misses supplied by another cache (under MESI, the dirty reads).}
+\label{tab:res-effectb}
+\small
+\begin{tabular}{@{}c c c c c c c c@{}}
+\toprule
+$T_{\mathrm{coh}}$ & c2c & \multicolumn{3}{c}{Reads from a cache, per run} &
+  \multicolumn{2}{c}{Their latency} & Time saved \\
+\cmidrule(lr){3-5}\cmidrule(lr){6-7}
+ & & MESI & MOESI & ratio & MESI & MOESI & (\%) \\
+\midrule
+30 & 21 & 6,123 & 8,628 & 1.41 & 43.9 & 29.2 & $+17.8$ \\
+60 & 51 & 5,990 & 8,625 & 1.44 & 71.5 & 57.6 & $+12.4$ \\
+100 & 91 & 5,882 & 8,611 & 1.46 & 109.7 & 96.4 & $+6.2$ \\
+150 & 141 & 5,759 & 8,596 & 1.49 & 158.1 & 145.4 & $-0.1$ \\
+200 & 191 & 5,677 & 8,594 & 1.51 & 207.0 & 194.8 & $-4.9$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{verdictbox}[amberC]{Verdict on H4: held, with one correction}
+MOESI never moved more bytes than MESI and was slower only when a cache-to-cache
+transfer was much slower than a memory read, which is Effect~B as predicted. Owner
+contention mattered little. Small caches did reduce the gain without reversing it,
+but mainly by lowering DSR, not $\sigma$ (\cref{sec:res-sigma}).
+\end{verdictbox}
+
+% ---------------------------------------------------------------
+\section{What the Results Mean}
+\label{sec:res-meaning}
+\label{sec:res-glance}
+\sectionmap{[Meaning [Agrees with the published evaluations] [Explains why they differ]
+  [A design rule in four questions] [Four verdicts]]}
+\index{MESI}\index{MOESI}\index{Owned state}\index{bus utilisation}%
+
+Chapter~14 found that published evaluations disagree on how much MOESI helps and
+that none isolates \stO\ (\cref{tab:evaluations}). Our controlled results do not
+replace those studies, which use real programs and detailed simulators, but they
+give one consistent explanation of what the studies report (\cref{tab:res-published}).
+The third row is the most telling. A protocol can remove most memory writes (MOESI
+removed 83 to 99.8\,\% of them for $d\ge0.1$, \cref{tab:res-traffic}) and still
+change run time by about one per cent, because a system with spare bandwidth does
+not wait for those writes. Measured on such a system MOESI and MESI look equal; on a
+saturated one MOESI cuts run time by up to 28\,\%. Both measurements are right, and
+H2 says which one a given study will see.
+
+\begin{table}[htbp]
+\centering
+\caption{Published findings (as summarised in Chapters 11 and 14) and the result
+here that accounts for each. The right-hand column is an explanation consistent
+with our model, not a reproduction of those studies.}
+\label{tab:res-published}
+\small
+\begin{tabular}{@{}L{3.5cm} L{4.2cm} L{5.0cm}@{}}
+\toprule
+Study & Published finding & Corresponding result here \\
+\midrule
+Archibald {\&} Baer~\cite[p.~295]{archibald1986evaluation} & the owner-based
+  Berkeley protocol surpasses Illinois at high sharing, because it does not
+  update memory on a miss to a modified block & the saving rises with DSR
+  (\cref{fig:res-dsr}) and is exactly the removed writebacks
+  (\cref{eq:identity}) \\
+Fagundes {\&} Souza~\cite{fagundes2024evaluation} & MOESI's advantage over
+  MESI shrinks as the last-level cache grows & MOESI gains less when memory-side
+  reads are cheap or uncongested relative to cache-to-cache reads (E4,
+  \cref{fig:res-h4}; E5, \cref{fig:res-memory}) \\
+Loughlin et al.~\cite{loughlin2022moesiprime} & removing downgrade writebacks
+  cuts DRAM row activations but changes run time by only $-0.51$ to
+  $+0.61\,\%$ & saved bytes become time only under load: 0.3 to 1.8\,\% below
+  16\,\% bus utilisation (\cref{tab:res-h2}) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The four verdicts combine into a rule a designer could apply before building MOESI,
+using only quantities measurable on a MESI system (\cref{fig:res-rule}). The first
+question needs the two counters of \cref{fig:dsr-counter}, and its answer also gives
+the expected traffic saving through the line of \cref{tab:res-dsr}. The second needs
+the utilisation of the bus and memory port on the existing system, and the third
+needs two latencies the designer already knows. The leaves give numbers only where
+Part~VI measured a range, so they share its limitations (Chapter~21).
+\Cref{tab:res-glance} collects the four verdicts; Chapter~22 turns them into
+answers to the research questions.
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=0.95\linewidth}{%
+\begin{forest}
+  decision tree,
+  [{Workload running\\on a MESI system}
+    [{Is DSR above zero?\\(two counters)}
+      [{Is the bus or memory\\port more than a third busy?}, el=yes
+        [{Is a cache-to-cache read\\faster than a memory read?}, el=yes
+          [{MOESI saves traffic {\it and} time:\\time 5--28\,\% here,\\growing with utilisation}, el=yes]
+          [{Risk: MOESI may be\\slower (Effect B),\\up to 6\,\% here}, el=no]]
+        [{MOESI saves traffic\\and memory writes,\\but little time ($\le 4\,\%$ here)}, el=no]]
+      [{No forced write backs:\\MOESI cannot help}, el=no]]
+  ]
+\end{forest}}
+\caption[A design rule]{A design rule from the four verdicts. Every question can be
+answered on the existing MESI system; ranges are those measured in this Part.}
+\label{fig:res-rule}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\caption{The four hypotheses of Part~IV against the measurements of Part~VI.}
+\label{tab:res-glance}
+\small
+\begin{tabular}{@{}L{1.3cm} L{3.7cm} L{5.3cm} L{2.2cm}@{}}
+\toprule
+ & Predicted & Measured & Verdict \\
+\midrule
+H1 (RQ1) & $F$ falls as cores are added & $F$ falls at every mix; 43.6\,\% at 2 cores
+  to 33.4\,\% at 16 for $d \ge 0.1$ & held \\
+H2 (RQ2) & time gain follows utilisation; limit = bus-busy ratio &
+  1\,\% of the byte saving becomes time at 2.5\,\% utilisation, 95\,\% at
+  saturation; limit reached & held \\
+H3 (RQ3) & identity exact; DSR predicts the saving & identity exact in all runs;
+  one line, mean error 1.84 points, holds on unseen data & held (in this model) \\
+H4 (RQ4) & never more bytes; slower only via Effect~B & never more bytes; slower
+  only if c2c $\gg$ memory; small caches act through DSR & held, corrected \\
+\bottomrule
+\end{tabular}
+\end{table}

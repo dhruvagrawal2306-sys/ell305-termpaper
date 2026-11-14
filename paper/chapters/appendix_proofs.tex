@@ -1,0 +1,59 @@
+% ===============================================================
+%  Appendix: Proofs of Propositions 15.1 and 16.1 (moved here under rule 7)
+% ===============================================================
+\chapter{Proofs of the Two Propositions}
+\label{app:proofs}
+\index{proof}%
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=0.8\linewidth}{%
+\begin{forest}
+  chapter map,
+  [Proofs
+    [Proposition 15.1 [Induction over accesses] [{Same copies, same LRU}]]
+    [Proposition 16.1 [Epoch by epoch] [One dirty read per saved epoch]]
+  ]
+\end{forest}}
+\caption[]{The two proofs moved here from
+Chapters~15 and~16.}
+\label{fig:app-proofs-map}
+\end{figure}
+
+\section{Proof of Proposition~\ref*{prop:residency} (identical cache contents)}
+\label{app:proof-residency}
+\index{MESI}\index{MOESI}\index{Owned state}\index{LRU replacement}\index{proof}%
+
+The proof is by induction over the accesses of the trace. Before the first access
+both runs hold nothing. Assume the two runs hold the same valid copies in the same
+LRU order just before some access. Whether that access hits or misses depends only
+on whether the requesting core holds the block, which by assumption is the same in
+both runs. The access is therefore a hit in both or a miss in both, and it updates
+the LRU order in the same way.
+
+Now compare the actions of \cref{tab:transition-diff}. The shaded read-miss rows
+install the block in the requester in both protocols and keep the supplier's copy
+valid in both, as \stS\ in MESI and as \stO\ in MOESI, so no copy is created or
+removed differently. A write invalidates every other copy in both protocols,
+whether those copies are labelled \stS\ or \stO. A block chosen for eviction is the
+LRU block, which is the same in both runs, and it leaves the cache in both. After
+the access, the valid copies and the LRU orders therefore coincide again. Misses and
+upgrades are decided by these contents, so they coincide as well. $\square$
+
+\section{Proof of Proposition~\ref*{prop:never-worse} (MOESI never sends more bytes)}
+\label{app:proof-never-worse}
+\index{MESI}\index{MOESI}\index{dirty epoch}\index{owner}\index{proof}%
+
+By \cref{prop:residency} the two runs hold the same copies at every step, so a copy
+is evicted at the same moment in both. Take any dirty epoch. If MOESI writes back in
+it, the owner's copy was evicted before the next write. If the epoch had a remote
+read, MESI wrote back at that read. If it had none, MESI's \stM\ copy is the same
+copy as MOESI's owner copy, so it was evicted at the same moment and MESI wrote back
+too. Hence $W_{\mathrm{MOESI}} \le W_{\mathrm{MESI}}$ epoch by epoch, and the
+difference is exactly one per saved epoch. \Cref{eq:dB-writebacks} then gives
+$\Delta B = 72\,n_{\mathrm{saved}} \ge 0$.
+
+Finally, an epoch can be saved only if it contains a remote read. Under MESI the
+first such read is a dirty read, and later reads in the same epoch find the block
+clean. Every saved epoch therefore contains exactly one of the $n_{\mathrm{dr}}$
+dirty reads, and $n_{\mathrm{saved}} \le n_{\mathrm{dr}}$. $\square$

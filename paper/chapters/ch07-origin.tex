@@ -1,0 +1,202 @@
+% ===============================================================
+%  Chapter 7 -- Where the Cost of Coherence Comes From   (Part II)
+% ===============================================================
+\chapter{Where the Cost of Coherence Comes From}
+\label{ch:origin}
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  chapter map,
+  [Chapter 7
+    [The stale copy [Two caches disagree] [Hardware must fix it]]
+    [Every action is a message [{Control, data, write back}] [Six-step MESI bill]]
+    [A fourth kind of miss [Coherence misses]]
+  ]
+\end{forest}}
+\caption[]{Structure of Chapter~7: from the failure
+coherence prevents to an itemised bill for preventing it.}
+\label{fig:ch7-map}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{The Stale Copy, and Why Hardware Must Prevent It}
+\label{sec:orig-stale}
+\label{sec:orig-hardware}
+\sectionmap{[Stale copy [Core 0 writes into its own cache] [Core 1 reads memory]
+  [Gets an old value] [Hardware must prevent it on every access]]}
+\index{write-back cache}%
+
+\Cref{fig:stale} shows what goes wrong without coherence, using only private
+write-back caches (\cref{sec:cache-write}) and a shared address space
+(\cref{sec:par-sm-mp}). Core~0 writes \texttt{x=1}. The new value stays in core~0's
+write-back cache and memory still holds \texttt{0}. Core~1 then reads \texttt{x},
+misses and fetches the block from memory, so it gets \texttt{0}, a value that has
+already been overwritten. Each component did its job, yet the program reads the
+wrong value.
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}[0.85]
+\begin{tikzpicture}[font=\sffamily\small,
+    box/.style={draw, rounded corners=2pt, minimum width=2.5cm,
+                minimum height=0.9cm, align=center, thick},
+    core/.style={box, fill=slateC!15, draw=slateC},
+    cache/.style={box, fill=tealC!13, draw=tealC},
+    mem/.style={box, fill=amberC!14, draw=amberC!90!black, minimum width=7.6cm},
+    lbl/.style={font=\sffamily\scriptsize\itshape, text=brickC}]
+  \node[core] (c0) at (0,3.5) {Core 0};
+  \node[core] (c1) at (5.1,3.5) {Core 1};
+  \node[cache] (l0) at (0,2.05) {L1 cache\\[-1pt]{\footnotesize\ttfamily x = 1}\ {\scriptsize(modified)}};
+  \node[cache] (l1) at (5.1,2.05) {L1 cache\\[-1pt]{\footnotesize\ttfamily x = 0}\ {\scriptsize(stale)}};
+  \draw[thick, coreGrey] (-1.6,0.95) -- (6.7,0.95);
+  \node[font=\sffamily\scriptsize\itshape, text=coreGrey, anchor=west] at (-1.7,0.65) {interconnect};
+  \node[mem] (mm) at (2.55,-0.3) {Main memory\quad{\footnotesize\ttfamily x = 0}};
+  \draw[thick] (c0) -- (l0); \draw[thick] (c1) -- (l1);
+  \draw[thick] (l0) -- (0,0.95); \draw[thick] (l1) -- (5.1,0.95);
+  \draw[thick] (2.55,0.95) -- (mm);
+  \node[lbl, anchor=east, align=right] at (-1.75,2.4) {\textbf{1.} Core 0 writes\\\texttt{x = 1}};
+  \node[lbl, anchor=west, align=left] at (6.9,2.4) {\textbf{2.} Core 1 reads \texttt{x}\\and gets \texttt{0}};
+  \draw[-{Stealth}, thick, brickC] (-1.7,2.25) -- (-1.1,2.1);
+  \draw[-{Stealth}, thick, brickC] (6.85,2.25) -- (6.25,2.1);
+\end{tikzpicture}
+\end{bigfig}
+\caption[The stale-copy problem]{The failure coherence prevents: core~1's
+read is served by memory and returns a value that no longer exists.}
+\label{fig:stale}
+\end{figure}
+
+Private caches and write-back are both needed for speed, and together they
+create stale copies. Software could flush a modified block before another core
+reads it, but only if it knew which data is shared and when, and the
+shared-memory model exists so that programmers do not have to track that
+(\cref{sec:par-threads}). Hardware coherence keeps the model correct without help
+from the program~\cite{martin2012here}. Its protocol therefore acts on every miss
+and every write to possibly shared data for the life of the machine, and a small
+inefficiency in it is paid billions of times.
+
+% ---------------------------------------------------------------
+\section{Every Protocol Action Is a Message}
+\label{sec:orig-messages}
+\label{sec:orig-count}
+\sectionmap{[Messages [Control: requests and invalidations]
+  [Data and write back: a whole block] [Six-step bill: 30 percent write backs]]}
+\index{MESI}%
+
+Each protocol action reaches the interconnect as a message that holds the bus or
+a link for some time. Control messages carry only an address and a command, while
+data and writeback messages also carry a whole block (\cref{tab:msg-classes}).
+
+\begin{table}[htbp]
+\centering
+\caption{The three classes of coherence message, with the sizes assumed in
+this report (64-byte blocks; an 8-byte address-and-command header).}
+\label{tab:msg-classes}
+\small
+\begin{tabular}{@{}l l p{4.6cm} r@{}}
+\toprule
+Class & Examples & Purpose & Assumed size \\
+\midrule
+Control & \textit{readmiss}, \textit{writemiss}, \textit{write} &
+  request a block, or invalidate other copies & 8\,B \\
+Data & \textit{send data} & move a block to the requesting cache & 72\,B \\
+Write back & \textit{write back} & update the lower level with a modified block & 72\,B \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\Cref{fig:miss-anatomy} compares the two ways MESI serves a read miss: from
+memory, or from a cache that holds the block modified and, as Chapter~5 showed,
+also writes it back.
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}[0.9]
+\begin{tikzpicture}[font=\sffamily\scriptsize,
+    ag/.style={draw, thick, rounded corners=2pt, minimum width=1.6cm,
+               minimum height=0.55cm, font=\sffamily\small},
+    m/.style={-{Stealth}, thick}]
+  \node[font=\sffamily\bfseries\small] at (2.2,3.6) {(a) Served by memory};
+  \node[ag, fill=tealC!15, draw=tealC] (r) at (0,2.9) {Requester};
+  \node[ag, fill=amberC!16, draw=amberC] (mm) at (4.4,2.9) {Memory};
+  \draw[dashed, coreGrey!60] (r) -- (0,0.6); \draw[dashed, coreGrey!60] (mm) -- (4.4,0.6);
+  \draw[m, plumC] (0,2.1) -- node[above]{readmiss (8 B)} (4.4,2.1);
+  \draw[m, mesiBlue] (4.4,1.4) -- node[above]{send data (72 B)} (0,1.4);
+  \node[text=coreGrey] at (2.2,0.35) {2 messages, 80 B};
+  \begin{scope}[xshift=7.2cm]
+  \node[font=\sffamily\bfseries\small] at (2.6,3.6) {(b) Served by a cache holding M};
+  \node[ag, fill=tealC!15, draw=tealC] (r2) at (0,2.9) {Requester};
+  \node[ag, fill=mesiBlue!15, draw=mesiBlue] (o2) at (2.6,2.9) {Holder (M)};
+  \node[ag, fill=amberC!16, draw=amberC] (m2) at (5.2,2.9) {Memory};
+  \foreach \x in {0,2.6,5.2} \draw[dashed, coreGrey!60] (\x,2.6) -- (\x,0.6);
+  \draw[m, plumC] (0,2.1) -- node[above]{readmiss} (2.6,2.1);
+  \draw[m, mesiBlue] (2.6,1.5) -- node[above]{send data} (0,1.5);
+  \draw[m, alertRed] (2.6,1.0) -- node[above]{\textbf{write back}} (5.2,1.0);
+  \node[text=coreGrey] at (2.6,0.35) {3 messages, 152 B};
+  \end{scope}
+\end{tikzpicture}
+\end{bigfig}
+\caption[Anatomy of a read miss in MESI]{Two ways MESI serves a read miss. When
+another cache holds the block modified, the block is also written back, which
+nearly doubles the bytes moved.}
+\label{fig:miss-anatomy}
+\end{figure}
+
+\Cref{tab:mesi-bill} prices the six-step trace of \cref{tab:trace} under MESI
+with the sizes of \cref{tab:msg-classes}. Part~III prices the other protocols.
+
+\begin{table}[htbp]
+\centering
+\caption{The cost of the six-step trace of \cref{tab:trace} under MESI.}
+\label{tab:mesi-bill}
+\small
+\begin{tabular}{@{}c l l c c c r@{}}
+\toprule
+Step & Access & MESI action & Control & Data & Write back & Bytes \\
+\midrule
+1 & P0 reads  & readmiss; memory sends data      & 1 & 1 & 0 & 80 \\
+2 & P0 writes & silent \stE$\to$\stM             & 0 & 0 & 0 & 0 \\
+3 & P1 reads  & readmiss; P0 sends data, writes back & 1 & 1 & \textbf{1} & 152 \\
+4 & P2 reads  & readmiss; data supplied          & 1 & 1 & 0 & 80 \\
+5 & P1 writes & \textit{write} invalidates P0, P2 & 1 & 0 & 0 & 8 \\
+6 & P0 reads  & readmiss; P1 sends data, writes back & 1 & 1 & \textbf{1} & 152 \\
+\midrule
+ & \textbf{Total} & & 5 & 4 & \textbf{2} & 472 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Of the 472 bytes, 144 (30.5\,\%) are the two writebacks at steps~3 and~6. Both
+happen because a core reads a block that another core holds in \stM\ (Chapter~9).
+
+% ---------------------------------------------------------------
+\section{A Fourth Kind of Miss: Coherence Misses}
+\label{sec:orig-4c}
+\sectionmap{[Fourth C [{Three Cs: one core}]
+  [Coherence miss: exists only with sharing]]}
+\index{coherence miss}%
+
+Sharing adds a fourth kind of miss to the three of \cref{tab:three-c}. A
+coherence miss\index{coherence miss} is a miss to a block that was invalidated
+because another core wrote it, like P0's read at step~6 of \cref{tab:mesi-bill}.
+A larger or more associative cache does not remove it (\cref{fig:4c-tree}). The
+protocol sets its price, including whether it also causes a writeback.
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=0.85\linewidth}{%
+\begin{forest}
+  decision tree, for tree={l sep=4pt},
+  [Has this cache held the block before?
+    [Compulsory miss, el=no]
+    [Removed by another core's write?, el=yes
+      [Coherence miss, el=yes]
+      [{Fully associative cache of the\\same size would still hold it?}, el=no
+        [Conflict miss, el=yes]
+        [Capacity miss, el=no]]]]
+\end{forest}}
+\caption[Decision tree: classifying a cache miss]{The four kinds of miss. The
+coherence miss is the only one caused by sharing.}
+\label{fig:4c-tree}
+\end{figure}

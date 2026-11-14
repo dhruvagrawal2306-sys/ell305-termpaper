@@ -1,0 +1,122 @@
+% ===============================================================
+%  Appendix: Simulator code excerpts (moved here under rule 7)
+% ===============================================================
+\chapter{Simulator Code Excerpts}
+\label{app:code}
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=0.8\linewidth}{%
+\begin{forest}
+  chapter map,
+  [Code excerpts
+    [Traffic layer [Read handler: the M-to-O branch]]
+    [Timing layer [Charging a miss]]
+    [Reproduction [Seven commands]]
+  ]
+\end{forest}}
+\caption[]{The three code excerpts referred to in
+Chapter~17.}
+\label{fig:app-code-map}
+\end{figure}
+
+The full source is in the \texttt{simulator/} folder of the report's source files.
+Line numbers match the source files.
+
+\section{The Read Handler of the Traffic Layer}
+\label{app:code-read}
+\index{Owned state}\index{owner}%
+
+The branch on \texttt{self.has\_O} is the shaded row of \cref{tab:transition-diff}:
+with \stO\ the holder keeps the dirty block and becomes the owner; without it the
+holder writes the block back and drops to \stS.
+
+\begin{lstlisting}[language=Python, caption={The read handler of the traffic layer (\texttt{coherence\_sim.py}). The branch on \texttt{self.has\_O} is the shaded row of \cref{tab:transition-diff}.}, label={lst:readmiss}, firstnumber=157]
+    def _read(self, core, addr, line):
+        if line is not None:                       # M, E, S or O: read hit
+            self.hits += 1
+            self.caches[core].move_to_end(addr)
+            return
+        self.read_miss += 1
+        self.ev_kind = "rmiss"
+        others = self.holders.get(addr, {})
+        dirty = None
+        for c, l in others.items():
+            if l[0] in ("M", "O"):
+                dirty = l
+                self.ev_owner = c
+                break
+        ver = self.latest.get(addr, 0)
+        if dirty is not None:
+            self.dirty_reads += 1
+            if self.has_O:
+                # owner supplies, keeps dirty ownership (M -> O)
+                self.bytes_total += CTRL + DATA
+                dirty[0] = "O"
+            else:
+                # MSI / MESI: forced writeback, then memory supplies
+                self.bytes_total += CTRL + WB + DATA
+                self.ev_fwb = True
+                self.bytes_fwb += WB
+                self.mem_wr += BLOCK
+                self.mem_ver[addr] = dirty[1]
+                dirty[0] = "S"
+            new_state = "S"
+        else:
+            self.bytes_total += CTRL + DATA
+            if others:
+                for l in others.values():
+                    if l[0] == "E":
+                        l[0] = "S"
+                new_state = "S"
+            else:
+                new_state = "E" if self.has_E else "S"
+        self._install(core, addr, new_state, ver)
+\end{lstlisting}
+
+\section{Charging a Miss in the Timing Layer}
+\label{app:code-timing}
+
+\texttt{g} is the time the bus is granted. The two branches at the end implement the
+serial and overlapped writeback modes of \cref{fig:sim-wbmode}.
+
+\begin{lstlisting}[language=Python, caption={Charging a miss in the timing layer (\texttt{timing\_sim.py}). \texttt{g} is the time the bus is granted.}, label={lst:timing}, firstnumber=140]
+                g = max(t, bus_free)
+                wait_sum += g - t
+                n_tx += 1
+                bus_free = g + occ
+                bus_busy += occ
+                if kind == "upg":
+                    ready = g + P.T_UPG
+                elif owner is None:                  # memory supplies
+                    m = max(g, mem_free)
+                    mem_free = m + P.MEM_OCC
+                    mem_busy += P.MEM_OCC
+                    ready = m + P.T_MEM
+                else:                                # owner cache supplies
+                    o = max(g, own_free[owner])
+                    own_free[owner] = o + P.OWN_OCC
+                    if sim.ev_fwb:                   # MSI/MESI: flush to memory as well
+                        mw = max(o, mem_free)
+                        mem_free = mw + P.MEM_OCC
+                        mem_busy += P.MEM_OCC
+                        if P.wb_mode == "serial":
+                            ready = max(o + P.T_COH, mw + P.MEM_OCC)
+                        else:
+                            ready = o + P.L_C2C
+                    else:
+                        ready = o + P.L_C2C
+\end{lstlisting}
+
+\section{Regenerating Every Result}
+\label{app:code-repro}
+
+\begin{lstlisting}[language=bash, numbers=none, caption={Regenerating every result of the simulation study.}, label={lst:repro}]
+python3 coherence_sim.py validate   # 22 checks against Parts II-III
+python3 coherence_sim.py sweep      # T1, T2   (about 40 s, 2 cores)
+python3 analyze.py                  # traffic figures and summary
+python3 timing_sim.py validate      # 11 timing checks
+python3 timing_sim.py run           # E1-E5    (about 20 s, 2 cores)
+python3 analyze_timing.py           # timing figures and summary
+python3 make_report_data.py ../report/data   # data files for the figures of Part VI
+\end{lstlisting}

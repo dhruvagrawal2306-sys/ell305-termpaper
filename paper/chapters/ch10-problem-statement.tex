@@ -1,0 +1,157 @@
+% ===============================================================
+%  Chapter 10 -- Problem Statement                       (Part II)
+% ===============================================================
+\chapter{Problem Statement: The Cost of Forced Writebacks on Dirty Sharing}
+\label{ch:problem}
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  chapter map,
+  [Chapter 10
+    [The problem [In words] [Formally]]
+    [Scope {\&} assumptions]
+    [Research questions [RQ1 to RQ4]]
+    [Requirements for a solution [Decision tree]]
+  ]
+\end{forest}}
+\caption[]{Structure of Chapter~10: the problem in words
+and formally, its scope, and the research questions Parts~III to~VI answer.}
+\label{fig:ch10-map}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{The Problem}
+\label{sec:prob-sentence}
+\label{sec:prob-formal}
+\sectionmap{[The problem [MESI writes back on every dirty sharing transfer]
+  [Not required by the axioms] [{Measured by B, T, AMAT and F}]]}
+\index{MESI}\index{forced writeback}\index{dirty sharing}\index{write-back cache}\index{AMAT}\index{snooping protocol}\index{directory protocol}\index{sharing patterns!producer--consumer}\index{coherence axioms}%
+
+\begin{problembox}[Problem Statement]
+In a multicore processor that uses MESI, whenever one core reads a block that
+another core holds modified, the protocol writes the block back to memory as well
+as supplying it to the reader. The coherence axioms do not require this writeback;
+MESI's rule that shared blocks are clean does. The writeback uses interconnect and
+memory bandwidth, is often overwritten before memory's copy is read, and its share
+of total traffic varies widely with the sharing pattern. We ask how much the
+forced writeback costs on 2 to 16 cores, how much of that cost a coherent protocol
+can remove, and whether the benefit of removing it can be predicted from a
+workload's behaviour under MESI alone.
+\end{problembox}
+
+The system is a chip with $N\in\{2,4,8,16\}$ cores, each with a private
+write-back L1 cache, sharing an LLC and main memory over a snooping bus or a
+directory network, with 64-byte blocks. The workload $W$ is a shared-memory
+parallel program run with one thread per core. For a protocol $P$ on $W$ with
+$N$ cores we define
+\begin{align*}
+  B_{\mathrm{tot}}(P,W,N) &= \text{total bytes moved by coherence messages,}\\
+  B_{\mathrm{fwb}}(P,W,N) &= \text{bytes moved by forced writebacks
+      (\stM$\to$\stS\ on a remote read),}\\
+  T(P,W,N) &= \text{execution time,}\qquad
+  \mathrm{AMAT}(P,W,N) \text{ as in \cref{eq:amat-coh},}
+\end{align*}
+and the forced-writeback fraction of a workload as
+\begin{equation}
+  F(W,N) = \frac{B_{\mathrm{fwb}}(\mathrm{MESI},W,N)}{B_{\mathrm{tot}}(\mathrm{MESI},W,N)}.
+  \label{eq:fwb-fraction}
+\end{equation}
+$F$ is 30.5\,\% for the trace of \cref{tab:mesi-bill} and between 10\,\% and
+45\,\% for the producer--consumer model of \cref{eq:pc-model}. For each $W$ and
+$N$ the task is (i)~to measure $F(W,N)$; (ii)~for any protocol $P$ that removes
+forced writebacks and keeps both axioms, to measure the change in
+$B_{\mathrm{tot}}$, $T$ and AMAT relative to MESI; and (iii)~to find out whether
+that change can be predicted from quantities measured under MESI alone.
+
+% ---------------------------------------------------------------
+\section{Scope and Assumptions}
+\label{sec:prob-scope}
+\sectionmap{[Scope [MSI-family write-invalidate] [2 to 16 cores]
+  [Consistency model fixed] [OpenMP workloads]]}
+\index{MSI}\index{forced writeback}\index{write-back cache}\index{snooping protocol}\index{directory protocol}\index{write-invalidate}\index{false sharing}\index{OpenMP}\index{memory consistency}\index{verification}%
+
+We chose these assumptions so that the forced writeback is the only variable of
+interest.
+\begin{itemize}[itemsep=1pt]
+  \item Protocols: the write-invalidate MSI family (Chapter~5) in snooping and
+    directory forms.
+  \item Caches: private write-back L1 caches with 64-byte blocks and a shared LLC
+    (\cref{sec:cache-private}).
+  \item Scale: 2, 4, 8 and 16 cores, where both snooping and directories are
+    realistic (\cref{fig:choose-tree}).
+  \item Consistency: fixed and not studied (\cref{sec:coh-consistency}).
+  \item Workloads: shared-memory C programs parallelised with OpenMP
+    (\cref{sec:par-threads}), including kernels built to show each sharing pattern
+    of \cref{tab:patterns}.
+  \item Out of scope: false sharing (\cref{sec:scale-false}), message passing and
+    formal verification.
+\end{itemize}
+
+% ---------------------------------------------------------------
+\section{Research Questions}
+\label{sec:prob-rq}
+\sectionmap{[Research questions [RQ1: how big is F] [RQ2: does traffic saved become time saved]
+  [RQ3: can it be predicted] [RQ4: when does removing it hurt]]}
+
+The problem splits into four research questions (\cref{tab:rq}).
+
+\begin{table}[htbp]
+\centering
+\caption{Research questions and where each is answered.}
+\label{tab:rq}
+\small
+\begin{tabular}{@{}l p{8.4cm} l@{}}
+\toprule
+ & Question & Answered in \\
+\midrule
+RQ1 & How large is the forced-writeback fraction $F(W,N)$ for realistic
+  workloads, and how does it change from 2 to 16 cores? & Part VI \\
+RQ2 & When a protocol removes forced writebacks, does the saved traffic turn
+  into saved execution time, or is it hidden while the interconnect is lightly
+  loaded? & Part VI \\
+RQ3 & Can the benefit be predicted from a workload's behaviour under MESI,
+  before the other protocol is built? & Parts IV and VI \\
+RQ4 & Are there conditions, such as a small LLC, under which deferring the
+  writeback costs more than it saves? & Parts IV and VI \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------
+\section{Requirements for Any Solution}
+\label{sec:prob-requirements}
+\label{sec:prob-bridge}
+\sectionmap{[Requirements [Keep completion] [Keep order]
+  [Remove the forced write back] [Keep MESI's gains]]}
+\index{MESI}\index{MOESI}\index{MESIF}\index{Owned state}\index{forced writeback}\index{directory protocol}\index{token coherence}\index{write-update}\index{coherence axioms}%
+
+A candidate solution in Part~III must meet four requirements, applied in order
+in \cref{fig:req-tree}. The first two are the coherence axioms. The third is the
+problem itself. The fourth stops a solution from trading one inefficiency for
+another. Part~III judges the existing answers against them: the Owned state of
+MOESI, which removes the forced writeback directly; write-update protocols, which
+avoid invalidation; the Forward state of MESIF, which targets a different cost of
+sharing; and directories and token coherence, which change how the cost is paid.
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=0.85\linewidth}{%
+\begin{forest}
+  decision tree,
+  [Does every deferred write\\still reach memory eventually?\\(completion axiom)
+    [Rejected:\\loses writes, el=no]
+    [Do all caches still see writes\\to a block in one order?\\(order axiom), el=yes
+      [Rejected:\\incoherent, el=no]
+      [Does it remove the write back\\on a remote read of an M block?, el=yes
+        [Not a solution\\to this problem, el=no]
+        [Does it keep MESI's silent\\E-to-M upgrade?, el=yes
+          [Weaker candidate, el=no]
+          [Candidate for\\Part III, el=yes]]]]]
+\end{forest}}
+\caption[Decision tree: requirements for a solution]{The four requirements for a
+solution, applied in order. Only solutions that reach the bottom-right box are
+full candidates in Part~III.}
+\label{fig:req-tree}
+\end{figure}

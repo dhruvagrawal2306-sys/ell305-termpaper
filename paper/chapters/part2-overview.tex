@@ -1,0 +1,27 @@
+% ===============================================================
+%  Part II overview -- sits directly under the Part II heading
+% ===============================================================
+\begin{center}
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  part map,
+  [Part II
+    [Ch.~7: Where the Cost Comes From
+      [Stale copies] [Messages] [Coherence misses]]
+    [Ch.~8: How the Cost Grows
+      [Broadcast] [Bus saturation] [Coherence in AMAT]]
+    [Ch.~9: Forced Writebacks
+      [The transaction] [Root cause] [Sharing patterns]]
+    [Ch.~10: Problem Statement
+      [Formal statement] [Research questions]]
+  ]
+\end{forest}}
+\end{center}
+
+\begin{keybox}[What Part II does]
+Part~II looks at what coherence costs. Chapter~7 traces the cost to its origin,
+Chapter~8 shows how it grows as cores are added, and Chapter~9 isolates the one
+inefficiency this report studies: the writeback MESI performs whenever another
+cache reads a modified block. Chapter~10 states the problem formally and poses
+the research questions. Remedies, including MOESI, are judged only in Part~III.
+\end{keybox}

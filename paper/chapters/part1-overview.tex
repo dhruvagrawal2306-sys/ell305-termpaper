@@ -1,0 +1,29 @@
+% ===============================================================
+%  Part I overview -- sits directly under the Part I heading
+% ===============================================================
+\begin{center}
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  part map,
+  [Part I
+    [Ch.~2: Caches
+      [{Locality $\cdot$ organisation\\write policies $\cdot$ hierarchy}]]
+    [Ch.~3: Parallel Processing
+      [{Multicore $\cdot$ shared memory\\interconnects $\cdot$ Amdahl's law}]]
+    [Ch.~4: How Coherence Is Maintained
+      [{Axioms $\cdot$ snooping {\&} directory\\update {\&} invalidate}]]
+    [Ch.~5: The MSI Family
+      [{MSI $\cdot$ MESI $\cdot$ MOESI}]]
+    [Ch.~6: History
+      [1978--2012 timeline]]
+  ]
+\end{forest}}
+\end{center}
+
+\begin{keybox}[What Part I does]
+Part~I covers the architecture the rest of the report needs: how a cache works
+(Chapter~2), why every chip is now a multicore (Chapter~3), how private caches are
+kept coherent (Chapter~4), the MSI, MESI and MOESI protocols (Chapter~5) and where
+they came from (Chapter~6). It describes these designs without comparing their
+costs; that starts in Part~II.
+\end{keybox}

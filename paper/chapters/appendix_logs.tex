@@ -1,0 +1,100 @@
+% ===============================================================
+%  APPENDIX C -- Coherence Message Logs
+%  Tables are generated from the existing result files by
+%  simulator/make_appendix_tables.py (no new simulation).
+% ===============================================================
+
+\chapter{Coherence Message Logs}
+\label{app:logs}
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  chapter map,
+  [Message logs
+    [Reading the logs [Four message classes] [Byte check per row]]
+    [What the logs show [Same requests in MESI and MOESI] [Writebacks differ]]
+    [Traffic experiment [{$d = 0.02$, 0.1, 0.5}] [2 to 16 cores]]
+    [Cache-size experiment [4 to 1024 blocks]]
+  ]
+\end{forest}}
+\caption[]{Structure of this appendix: the
+message counts behind the byte totals of Part~VI.}
+\label{fig:appA-map}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{How to Read the Logs}
+\label{sec:log-read}
+\sectionmap{[Logs [{Read, RdX, Invalidate, Writeback}] [Counts per run]
+  [Every row checked against the byte total]]}
+\index{MESI}\index{MOESI}\index{MSI}\index{Exclusive state}\index{forced writeback}%
+
+Part~VI reports bytes and ratios. This appendix gives the message counts behind
+them, so each byte total can be traced to individual coherence messages.
+\Cref{tab:log-classes} gives the name of each message class in the logs, in the
+textbook and in the literature (\gls{busrd}, \gls{busrdx}, \gls{busupgr}).
+
+\begin{table}[htbp]
+\centering
+\caption{Message classes counted in the logs.}
+\label{tab:log-classes}
+\small
+\begin{tabular}{@{}L{1.7cm} L{3.6cm} L{2.0cm} L{3.4cm} r@{}}
+\toprule
+Log column & Event & Textbook name & Common bus name & Bytes \\
+\midrule
+Read & read miss & \textit{readmiss} & BusRd & 8 + 72 \\
+RdX & write miss & \textit{writemiss} & BusRdX (read-for-ownership) & 8 + 72 \\
+Inv. & write hit in \stS\ or \stO & \textit{write} & BusUpgr (invalidate) & 8 \\
+WB forced & remote read of \stM\ (MSI, MESI) & \textit{write back} & Flush & 72 \\
+WB evict & eviction of \stM\ or \stO & \textit{write back} & Writeback & 72 \\
+WB end & block still dirty at the end of the run & --- & --- & 72 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+``Messages'' counts every message on the bus: one request per Read, RdX and
+Inv., one data message per Read and RdX, and one message per writeback.
+``Kbytes'' is the byte total under \cref{tab:counting-rules}. The script that made
+the tables recomputes each byte total from the message counts and stops if the two
+disagree, and every row passed. Counts are means over three seeds, so a row may not
+add up exactly after rounding.
+
+The logs show four results of the main text in raw counts. MESI and MOESI issue
+identical requests: in every row the Read, RdX and Inv.\ columns match, as
+\cref{prop:residency} requires, and only the writebacks differ. MOESI has no forced
+writebacks but slightly more writebacks at eviction and at the end of the run,
+which are the writebacks it defers (\cref{sec:res-sigma}). MSI issues more
+invalidations than MESI, because without \stE\ a private block that is read and then
+written needs an upgrade (\cref{sec:res-traffic}). And forced writebacks stay almost
+constant as cores are added while reads grow: at $d=0.1$ MESI makes about 3,400
+forced writebacks per run at every core count, while its reads grow from 3,614 at 2
+cores to 6,004 at 16, which is H1 in raw counts (\cref{sec:res-h1}).
+
+% ---------------------------------------------------------------
+\section{Logs of the Traffic Experiment}
+\label{sec:log-t1}
+\sectionmap{[Experiment T1 [{d = 0.02: light dirty sharing}] [{d = 0.1}]
+  [{d = 0.5: heavy dirty sharing}] [{Three protocols, four core counts}]]}
+\index{dirty sharing}%
+
+\Cref{tab:log-t1-d0p02,tab:log-t1-d0p1,tab:log-t1-d0p5} log experiment T1 at
+three levels of dirty sharing, for a producer write probability of 0.3.
+
+% ---------------------------------------------------------------
+\section{Logs of the Cache-Size Experiment}
+\label{sec:log-t2}
+\sectionmap{[Experiment T2 [8 cores] [4 to 1024 blocks]
+  [Eviction writebacks appear] [Forced writebacks fall]]}
+\index{MESI}\index{MOESI}\index{forced writeback}\index{Dirty Sharing Ratio}%
+
+\Cref{tab:log-t2} logs experiment T2. With small caches, eviction writebacks
+appear and forced writebacks fall: at 4 blocks MESI makes 6,504 forced writebacks
+per run instead of 14,418, because owners are often evicted before another core
+reads their data, which is the fall in DSR discussed in \cref{sec:res-sigma}.
+MOESI's eviction writebacks exceed MESI's by up to 1,438 per run (at 16 blocks);
+these are the deferred writebacks of \cref{fig:sigma-tree}.
+
+\input{data/appendix_tables.tex}

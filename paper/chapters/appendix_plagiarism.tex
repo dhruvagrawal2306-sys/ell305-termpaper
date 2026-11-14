@@ -1,0 +1,25 @@
+% ===============================================================
+%  APPENDIX A -- Plagiarism report (rule 5)
+%  Put the Turnitin similarity report for THIS version in the project
+%  folder as  turnitin_report.pdf  and rebuild; its pages are then
+%  inserted here automatically.
+% ===============================================================
+\chapter{Plagiarism Report}
+\label{app:plagiarism}
+\index{Turnitin}%
+
+\IfFileExists{turnitin_report.pdf}{%
+This appendix reproduces the Turnitin similarity report generated for the
+submitted version of this report. The report that follows is the complete,
+unedited output of Turnitin.
+
+\includepdf[pages=-, scale=0.85, pagecommand={\thispagestyle{fancy}}]{turnitin_report.pdf}
+}{%
+\begin{remarkbox}[Turnitin report to be inserted]
+The Turnitin similarity report for this version of the term paper is inserted
+here. The report must be generated from the final submitted PDF, so that it
+matches the Turnitin submission exactly. To insert it, save the report as
+\texttt{turnitin\_report.pdf} in the main project folder and rebuild; every page
+of it then appears in this appendix automatically.
+\end{remarkbox}
+}

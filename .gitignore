@@ -26,3 +26,15 @@ paper/*.pdf
 # Windows (teammates browsing a clone)
 Thumbs.db
 desktop.ini
+
+# Index and glossary build files
+*.idx
+*.ind
+*.ilg
+*.glg
+*.glo
+*.gls
+*.ist
+
+# Python
+__pycache__/

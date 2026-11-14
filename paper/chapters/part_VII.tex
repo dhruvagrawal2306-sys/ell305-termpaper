@@ -1,0 +1,351 @@
+% ===============================================================
+%  PART VII -- Limitations and Conclusion (Chapters 21--22)
+% ===============================================================
+
+\part{Limitations and Conclusion}
+\label{part:conclusion}
+
+\begin{center}
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  part map,
+  [Part VII
+    [Ch.~21: Limitations
+      [Modelled vs left out] [Threats to validity] [Claims not made]]
+    [Ch.~22: Conclusion
+      [Answers to RQ1--RQ4] [Contributions] [Future work]]
+  ]
+\end{forest}}
+\end{center}
+
+\begin{keybox}[What Part VII does]
+Chapter~21 sets out what the study cannot show: what the simulator leaves out,
+which threats could make a result wrong and what we did about each, and which
+claims we do not make. Chapter~22 answers the four research questions of
+Chapter~10 and lists the work that would test the conclusions further.
+\end{keybox}
+
+% ===============================================================
+%  Chapter 21 -- Limitations and Threats to Validity
+% ===============================================================
+\chapter{Limitations and Threats to Validity}
+\label{ch:limits}
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  chapter map,
+  [Chapter 21
+    [Modelled vs left out [What the simulator has] [What it lacks]]
+    [Threats to validity [Internal] [Construct] [External]]
+    [Claims not made [Absolute times] [Named programs] [Universal DSR line]]
+  ]
+\end{forest}}
+\caption[]{Structure of Chapter~21: what the model contains,
+what could make its results wrong, and the limits on what can be concluded.}
+\label{fig:ch21-map}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{What the Study Models and What It Leaves Out}
+\label{sec:lim-model}
+\sectionmap{[Model [{Private caches, one bus, one memory port}]
+  [{No pipeline, no DRAM, no directory}] [{Synthetic workloads}]
+  [Effect on the results]]}
+\index{MOESI}\index{directory protocol}%
+
+\Cref{fig:lim-model} sets what the two layers of Chapter~17 contain beside what a
+real multicore processor also has. Some omissions would change the size of the
+results in a predictable direction. A core that keeps working past a miss, through
+out-of-order execution or prefetching, hides part of every miss latency, so the
+small time gains measured at low load would probably shrink further; at saturation,
+where time is set by bus occupancy, the limit of \cref{eq:sat-limit} would still
+apply. A shared LLC would make memory-side reads faster and less congested, which
+by experiments E4 and E5 would reduce MOESI's time advantage, the trend Fagundes
+and Souza report~\cite{fagundes2024evaluation}. Other omissions, such as real
+programs and directories, change what is measured rather than its size.
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}[0.95]
+\begin{tikzpicture}[font=\sffamily\scriptsize,
+    item/.style={draw, thick, rounded corners=2pt, minimum width=5.4cm, minimum height=0.55cm, align=left, anchor=west, inner sep=4pt}]
+  \node[font=\sffamily\bfseries\small, text=memGreen!80!black] at (2.7,5.0) {Modelled};
+  \node[font=\sffamily\bfseries\small, text=alertRed] at (9.6,5.0) {Left out};
+  \foreach \y/\t in {4.3/{private write-back caches, LRU, 64-B blocks},
+                     3.6/{MSI, MESI, MOESI differing in three rules},
+                     2.9/{one snooping bus; messages priced in bytes},
+                     2.2/{one memory port; owner cache ports},
+                     1.5/{per-core clocks; queueing for shared resources},
+                     0.8/{report latencies $T_{L1}$, $T_{\mathrm{mem}}$, $T_{\mathrm{coh}}$},
+                     0.1/{synthetic mixtures of four sharing patterns}} {
+    \node[item, fill=memGreen!10, draw=memGreen] at (0,\y) {\t};
+  }
+  \foreach \y/\t in {4.3/{shared last-level cache; inclusion},
+                     3.6/{processor pipeline, out-of-order execution},
+                     2.9/{prefetching; DRAM banks and row buffers},
+                     2.2/{directories and point-to-point networks},
+                     1.5/{other MOESI members (forwarding, MOESI-prime)},
+                     0.8/{false sharing; races between requests},
+                     0.1/{real programs, operating system, energy}} {
+    \node[item, fill=alertRed!8, draw=alertRed] at (6.9,\y) {\t};
+  }
+  \draw[thick, coreGrey, dashed] (6.45,-0.35) -- (6.45,4.7);
+\end{tikzpicture}
+\end{bigfig}
+\caption[What the study models]{What the simulator of Part~V contains (left) and
+what a real multicore processor also has (right). Each item on the right is a
+reason why Part~VI describes trends, not the behaviour of a particular machine.}
+\label{fig:lim-model}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{Threats to Validity}
+\label{sec:lim-threats}
+\sectionmap{[Threats [{Internal: is the result right for the model?}]
+  [{Construct: is the right thing measured?}] [{External: does it carry over?}]
+  [Mitigation for each]]}
+\index{forced writeback}\index{Dirty Sharing Ratio}%
+
+\Cref{tab:threats} lists the threats we identified, in the usual three groups:
+internal (could the result be wrong even for the model?), construct (does the
+metric measure what we claim?) and external (would the result hold outside the
+model?), with what we did about each. The external threat with the largest
+consequence is the first one. Every number in Part~VI comes from synthetic traces
+whose sharing we chose. They contain the patterns that, by Chapter~9, decide the
+cost of the forced writeback, and DSR was tested over a wide range of mixes, core
+counts and cache sizes, but a real program has working sets, phases and
+synchronisation that no mix of four patterns reproduces. The DSR line was fitted and
+tested on data from one simulator, and its slope and accuracy on real programs are
+unknown.
+
+\begin{table}[htbp]
+\centering
+\caption{Threats to the validity of the results, and what was done about each.}
+\label{tab:threats}
+\footnotesize
+\begin{tabular}{@{}L{1.5cm} L{4.6cm} L{6.6cm}@{}}
+\toprule
+Kind & Threat & Mitigation \\
+\midrule
+Internal & a bug in the simulator could look like a protocol effect &
+  22 analytical checks, coherence checked by version numbers on every access,
+  the Part~IV identities on 468 pairs, 11 timing checks (\cref{sec:sim-verify}) \\
+ & in the timing study the two protocols' interleavings can differ (read
+  misses differ by up to 1.8\,\%) & exact claims made for the traffic study only;
+  timing reported as paired ratios over seeds (\cref{sec:method-timing}) \\
+ & only three seeds per configuration & errors on held-out seeds match in-sample
+  errors (\cref{sec:res-h3}); spreads reported, not only means \\
+ & the write-miss transfer rule was chosen by us & identical in all protocols;
+  not exercised by the validated patterns (\cref{sec:sim-traffic}) \\
+\midrule
+Construct & $F$ and the saving agree almost by construction &
+  stated explicitly (\cref{sec:res-h3}); the DSR line, which uses only
+  transaction counts, is the result tested \\
+ & execution time is the finish time of the slowest core & comparisons are
+  paired on identical streams, so imbalance affects both protocols \\
+ & bytes are not energy, and AMAT is not time & time measured separately in the
+  timing layer; no energy claims; AMAT and time compared in \cref{sec:res-amat} \\
+\midrule
+External & synthetic workloads, not real programs & built from the four
+  patterns that decide the cost (Chapter~9); results stated per pattern mix \\
+ & no pipeline, prefetching, DRAM or shared last-level cache & results stated
+  as trends and relative differences; expected direction of each omission
+  discussed in \cref{sec:lim-model} \\
+ & assumed bus, upgrade and port latencies & each swept: E1 (load), E4
+  (cache-to-cache, owner port), E5 (memory port) \\
+ & one snooping bus; no directory & directory behaviour left to the analysis
+  of Chapter~13 and \cref{tab:p2p} \\
+ & one member of the MOESI class & chosen deliberately (\cref{sec:method-delta});
+  others can be studied by the same method \\
+ & 2 to 16 cores only & the range set in Chapter~10; trends beyond 16 not
+  claimed \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------
+\section{Claims This Report Does Not Make}
+\label{sec:lim-claims}
+\sectionmap{[Not claimed [Absolute execution times] [Results for named programs]
+  [{MOESI always faster}] [{One universal DSR line}]]}
+\index{MESI}\index{MOESI}\index{Dirty Sharing Ratio}\index{AMAT}\index{directory protocol}\index{false sharing}\index{memory consistency}%
+
+We do not claim that any real processor would show the execution times, speed-ups
+or AMAT values of Part~VI; only their trends and relative sizes are claimed. We do
+not claim that any named application or benchmark has a particular DSR or would
+gain a particular amount from MOESI. MOESI is not always faster than MESI, as E4
+shows (\cref{sec:res-h4}). The fitted line $S_B \approx 92.6\,\dsr - 3.6$ is not
+universal, since its slope depends on $\bar b$ and therefore on the system
+(\cref{sec:res-h3}). And we make no claims about energy, directories, consistency
+models or false sharing, which lie outside the study (\cref{tab:scope-change}).
+
+% ===============================================================
+%  Chapter 22 -- Conclusion and Future Work
+% ===============================================================
+\chapter{Conclusion and Future Work}
+\label{ch:conclusion}
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  chapter map,
+  [Chapter 22
+    [Answers [RQ1: how large] [RQ2: does it become time] [RQ3: can it be predicted] [RQ4: when does it hurt]]
+    [Contributions [Analytical] [Method {\&} metric] [Simulator]]
+    [Future work [Real traces] [gem5 cross-check] [Directories {\&} variants]]
+  ]
+\end{forest}}
+\caption[]{Structure of Chapter~22: answers to the four
+research questions, the contributions, and the next steps.}
+\label{fig:ch22-map}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{Answers to the Research Questions}
+\label{sec:conc-problem}
+\label{sec:conc-answers}
+\sectionmap{[Answers [{RQ1: a third to a half, falling with cores}]
+  [RQ2: only under load] [{RQ3: yes, through DSR}] [RQ4: only if c2c is slow]]}
+\index{MESI}\index{MOESI}\index{forced writeback}\index{dirty sharing}\index{Dirty Sharing Ratio}\index{survival fraction}\index{dirty epoch}\index{coherence axioms}\index{cache-to-cache transfer}\index{owner}%
+
+The report started from one transaction. When a core reads a block that another
+core holds in \stM, MESI supplies the block and also writes it back to memory,
+because its shared state must be clean (\cref{fig:msi}). The coherence axioms do not
+require this writeback (Chapter~10), and the owner-based protocols of Part~III
+remove it by keeping one cache responsible for the dirty data.
+\Cref{tab:conc-answers} gives the four answers.
+
+\begin{table}[htbp]
+\centering
+\caption{The research questions of \cref{tab:rq} and their answers.}
+\label{tab:conc-answers}
+\small
+\begin{tabular}{@{}L{1.0cm} L{4.0cm} L{6.0cm} L{1.9cm}@{}}
+\toprule
+ & Question & Answer & Evidence \\
+\midrule
+RQ1 & How large is $F(W,N)$, and how does it change from 2 to 16 cores? &
+  33--44\,\% of MESI's coherence bytes when dirty sharing is substantial;
+  falls as cores are added & \cref{sec:res-h1} \\
+RQ2 & Does saved traffic become saved time? & only when the bus or memory is
+  busy: about 1\,\% of the saving at low utilisation, 95\,\% at saturation &
+  \cref{sec:res-h2,sec:res-memory} \\
+RQ3 & Can the benefit be predicted from MESI behaviour? & yes for traffic:
+  exactly by $\sigma\cdot72\,\dsr/\bar b$, and to 1.8 points by a line in DSR
+  alone & \cref{sec:res-h3} \\
+RQ4 & Can deferring the writeback cost more than it saves? & never in bytes;
+  in time only if a cache-to-cache read is much slower than a memory read &
+  \cref{sec:res-sigma,sec:res-h4} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+When dirty sharing is a large part of a workload, the forced writeback is a third
+to nearly half of the bytes MESI's protocol moves, 43.6\,\% on average at 2 cores
+and 33.4\,\% at 16. Its share falls with more cores because the first reader in each
+epoch pays for the writeback and later readers find a clean block. It is also nearly
+all of MESI's memory writes in these workloads, which is why MOESI removed 83 to
+99.8\,\% of them.
+
+Removing it saves time only when a shared resource is busy. MOESI removed about
+30\,\% of the bytes at every load but cut execution time by 0.3\,\% on an idle bus
+and by 28\,\% on a saturated one, where the speed-up reached the bus-occupancy limit
+derived in Part~IV. On a system limited by memory bandwidth the gain was 36\,\%. A
+comparison on a lightly loaded system will see almost no difference in time, as the
+MOESI-prime evaluation did~\cite{loughlin2022moesiprime}.
+
+The traffic benefit can be predicted. Under the controlled method the two protocols
+hold the same blocks at every step and the saving equals
+$\sigma\cdot72\,\dsr/\bar b$ exactly. The Dirty Sharing Ratio alone, counted with
+two counters on a MESI system, predicted the saving through one straight line with
+a mean error of 1.84 points and kept that accuracy on core counts, traces and cache
+sizes it was not fitted to. The share of operations touching shared data does not
+work as a predictor. Time cannot be predicted from DSR alone, since it also depends
+on how busy the bus or memory is (\cref{fig:res-rule}).
+
+MOESI cannot send more bytes than MESI under the method of Chapter~15, and it did
+not in any of 756 paired runs. It was slower only when a cache-to-cache read was
+made much slower than a memory read, above about 140 cycles against 100, because
+the owner then slowly answers reads that MESI would have served from memory. A
+measurement of the dirty reads alone would not show this loss. Small caches reduce
+MOESI's gain without reversing it, mainly by lowering the number of dirty reads.
+
+% ---------------------------------------------------------------
+\section{What This Report Contributes}
+\label{sec:conc-contrib}
+\sectionmap{[Contributions [Analytical results in Parts I--III]
+  [{Method, proofs and metric in Part IV}] [Verified simulator in Part V]
+  [Tested hypotheses in Part VI]]}
+\index{MESI}\index{MOESI}\index{Owned state}\index{verification}\index{proof}%
+
+\Cref{tab:contrib-list} lists the contributions. The report completes the MESI
+protocol that the textbook leaves as an exercise and prices every protocol reviewed
+on one set of counting rules (C1--C10). It proposes a controlled method in which
+MOESI differs from MESI in three rules, and proves that the two protocols then hold
+the same blocks and differ only in writebacks (C11, C12). It introduces the Dirty
+Sharing Ratio, proves that MOESI never sends more bytes than MESI and derives the
+exact saving identity (C13, C14). It separates the Owned state into two effects with
+different signs, which explains when MOESI can be slower (C15). And it builds and
+verifies a two-layer simulator and uses it to test four hypotheses stated before
+any measurement (C16). The proofs are counting arguments and the simulator is a few
+hundred lines whose rules are the tables of this report, so all of it is within the
+reach of an undergraduate computer architecture course.
+
+% ---------------------------------------------------------------
+\section{Future Work}
+\label{sec:conc-future}
+\label{sec:conc-close}
+\sectionmap{[Future work [Real program traces] [Cycle-accurate cross-check]
+  [Directories and MOESI variants] [Energy and false sharing]]}
+\index{MESI}\index{MOESI}\index{MESIF}\index{Owned state}\index{dirty sharing}\index{Dirty Sharing Ratio}\index{directory protocol}\index{false sharing}\index{OpenMP}\index{gem5}\index{owner}%
+
+The limitations of Chapter~21 set the next steps (\cref{fig:conc-future}). The most
+important is to record memory traces of the OpenMP programs planned in Chapter~10
+with a binary-instrumentation tool, replay them through both layers, and test
+whether the DSR line keeps its accuracy and slope. Next, the three changed rules of
+\cref{tab:transition-diff} could be built into one protocol of a detailed simulator
+such as \texttt{gem5}~\cite{binkert2011gem5}, so the controlled comparison can be
+repeated with pipelines, a shared LLC and DRAM. The method could then be applied to
+a directory protocol, where the dirty read takes three hops
+(\cref{ch:scaling-approaches}), and to other members of the owner family, adding one
+feature at a time, such as the clean forwarding of MESIF~\cite{goodman2009mesif} or
+the extra states of MOESI-prime~\cite{loughlin2022moesiprime}. Finally, each protocol
+could be priced in energy as well as bytes, and false sharing, left out here, could
+be examined for its effect on DSR.
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=0.9\linewidth}{%
+\begin{forest}
+  chapter map,
+  [Future work
+    [Real workloads
+      [{Record traces of OpenMP programs}]
+      [{Test the DSR line on them}]]
+    [Detailed timing
+      [{Cross-check trends in gem5}]
+      [{Add pipeline, LLC, DRAM}]]
+    [Wider design space
+      [{Directory and token versions}]
+      [{MESIF, MOESI-prime, forwarding}]]
+    [New questions
+      [{Energy per protocol}]
+      [{False sharing and DSR}]]
+  ]
+\end{forest}}
+\caption[Future work]{Directions for future work, grouped by the limitation of
+Chapter~21 each one addresses.}
+\label{fig:conc-future}
+\end{figure}
+
+In short, the Owned state adds one state and changes three rules, and it does two
+separate things. It removes a writeback that coherence never required, which always
+reduces traffic and memory writes and saves time when bandwidth is scarce. It also
+makes the owner, instead of memory, answer later readers, which helps or hurts
+depending on which of the two is faster. Which protocol is better therefore depends
+on the workload's dirty sharing, the system's load and its latencies, and the first
+of these can be measured on a MESI system, before MOESI is built, by counting two
+events.

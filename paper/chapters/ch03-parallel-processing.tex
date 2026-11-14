@@ -1,0 +1,236 @@
+% ===============================================================
+%  Chapter 3 -- Parallel Processing and Multicore Systems   (Part I)
+% ===============================================================
+\chapter{Parallel Processing and Multicore Systems}
+\label{ch:parallel}
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  chapter map,
+  [Chapter 3
+    [From one core to many [Frequency wall] [MIMD multicores]]
+    [Shared memory {\&} threads [Fork--join in OpenMP]]
+    [Interconnects [{Bus, ring, mesh}]]
+    [Amdahl's law [Speedup ceiling] [Why coherence is needed]]
+  ]
+\end{forest}}
+\caption[]{Structure of Chapter~3: why chips became
+multicore, how they are programmed and connected, what limits the gain from more
+cores, and where coherence becomes necessary.}
+\label{fig:ch3-map}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{From One Core to Many}
+\label{sec:par-why}
+\label{sec:par-defs}
+\label{sec:par-flynn}
+\sectionmap{[One core is not enough [Clock speed stalled near 3 GHz]
+  [Little more parallelism in one program] [Spend transistors on more cores]]}
+\index{Sarangi textbook}%
+
+Until the mid-2000s an unchanged program ran faster on each new processor. Then
+clock frequency levelled off at around 3\,GHz, because beyond that point power and
+heat grew faster than performance, and wide superscalar cores could no longer find
+enough independent instructions to issue~\cite[\S12.1]{sarangi2025basic}. Moore's
+law~\cite{moore1965cramming} still gave designers more transistors each
+generation, so they spent them on several simpler cores in place of one bigger
+core.
+
+Sarangi defines \emph{multiprocessing} as several processors working in parallel,
+and a \emph{multicore processor}\index{multicore processor} as a multiprocessor
+whose processors (cores) share one chip~\cite[\S12.1, Def.~116]{sarangi2025basic}.
+In Flynn's taxonomy~\cite{flynn1972organizations}\cite[\S12.3]{sarangi2025basic} a
+multicore is a MIMD machine, since every core fetches its own instructions and
+works on its own operands. Multiprocessors came first. By the late 1990s
+motherboards carried four or eight processors, IBM's POWER4 put two cores on one
+chip in 2001, and Intel and AMD followed in 2005~\cite[\S12.1]{sarangi2025basic}.
+This report deals with the multicore case, where the cores share one chip and one
+physical address space.
+
+% ---------------------------------------------------------------
+\section{Shared Memory, Threads and Fork--Join}
+\label{sec:par-sm-mp}
+\label{sec:par-threads}
+\sectionmap{[Programming model [Shared memory: common load and store]
+  [Message passing: explicit send] [Fork--join threads share data]]}
+\index{Sarangi textbook}%
+
+Parallel programs communicate in one of two ways (\cref{fig:sm-mp}). Threads in a
+shared-memory program use one address space and exchange data with ordinary loads
+and stores. Processes in a message-passing program, such as one written with MPI,
+have private memories and exchange data only through explicit \texttt{send} and
+\texttt{receive} calls~\cite[\S12.2.2]{sarangi2025basic}. Coherence is needed only
+in the shared-memory case, because only there can two cores cache the same
+location.
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}[0.85]
+\begin{tikzpicture}[font=\sffamily\scriptsize,
+    u/.style={draw, thick, rounded corners=2pt, minimum width=1.3cm, minimum height=0.55cm},
+    m/.style={draw, thick, rounded corners=2pt, fill=leafC!14, draw=leafC,
+              minimum height=0.6cm, align=center}]
+  \node[font=\sffamily\bfseries\small, text=tealC!80!black] at (2.0,2.7) {Shared memory};
+  \foreach \i/\c in {0/tealC,1/plumC,2/amberC} { \node[u, fill=\c!15, draw=\c] (t\i) at (\i*2.0,1.9) {thread \i}; \draw[thick, -{Stealth}, \c] (t\i) -- (\i*2.0,0.95); }
+  \node[m, minimum width=5.4cm] at (2.0,0.6) {one shared address space};
+  \node[text=coreGrey] at (2.0,-0.2) {communicate by \texttt{load} / \texttt{store}};
+  \begin{scope}[xshift=7.4cm]
+  \node[font=\sffamily\bfseries\small, text=brickC] at (2.4,2.7) {Message passing};
+  \foreach \i in {0,1,2} {
+    \node[u, fill=slateC!14, draw=slateC] (p\i) at (\i*2.4,1.9) {process \i};
+    \node[m, minimum width=1.3cm] (mm\i) at (\i*2.4,0.6) {private\\memory};
+    \draw[thick] (p\i) -- (mm\i);
+  }
+  \draw[-{Stealth}, thick, brickC] (p0) -- node[above=2pt, font=\sffamily\tiny]{\texttt{send}} (p1);
+  \draw[-{Stealth}, thick, brickC] (p1) -- node[above=2pt, font=\sffamily\tiny]{\texttt{send}} (p2);
+  \node[text=coreGrey] at (2.4,-0.2) {communicate only by messages};
+  \end{scope}
+\end{tikzpicture}
+\end{bigfig}
+\caption[Shared memory and message passing]{The two programming models. Only the
+left-hand model has locations that two cores can both cache.}
+\label{fig:sm-mp}
+\end{figure}
+
+Sarangi defines a thread as a sub-program with its own program counter and stack
+that runs in the same address space as other threads of the
+program~\cite[\S12.2.2, Def.~120]{sarangi2025basic}. Shared-memory programs usually
+follow the fork--join pattern. A sequential section starts $N$ threads, each thread
+works on its slice of the data, the program waits for all of them, and then it
+combines their results. \Cref{lst:omp} shows this in \gls{openmp}.
+
+\begin{lstlisting}[language=C, caption={Fork--join in OpenMP: summing an array in parallel.}, label=lst:omp]
+double partial[NTHREADS];               /* shared array of results  */
+#pragma omp parallel num_threads(NTHREADS)
+{
+    int me = omp_get_thread_num();      /* which slice is mine?     */
+    int first = me * (N / NTHREADS), last = first + N / NTHREADS;
+    double s = 0;
+    for (int k = first; k < last; k++) s += a[k];
+    partial[me] = s;                    /* write a shared location  */
+}                                       /* implicit join here       */
+double sum = 0;
+for (int t = 0; t < NTHREADS; t++) sum += partial[t];
+\end{lstlisting}
+
+The statement \texttt{partial[me] = s} writes a shared array that another core
+reads after the join. The program says nothing about how the value travels to the
+reading core, so the hardware has to handle it.
+
+% ---------------------------------------------------------------
+\section{Interconnection Networks}
+\label{sec:par-noc}
+\sectionmap{[Interconnects [Bus: one shared medium] [Ring and mesh: point-to-point]
+  [Diameter and bisection bandwidth]]}
+\index{network on chip}%
+
+Cores and caches exchange messages over an on-chip interconnect, or
+\gls{noc}\index{network on chip}. Two numbers describe it. The diameter is the
+longest shortest path between two nodes, which sets the worst-case latency. The
+bisection bandwidth is the smallest number of links that must be cut to split the
+network in half, which limits throughput~\cite[\S12.6.2]{sarangi2025basic}.
+\Cref{fig:topologies,tab:topologies} compare the topologies used in multicores.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[c]{0.66\linewidth}\centering
+\adjustbox{max width=\linewidth}{%
+\begin{tikzpicture}[font=\sffamily\scriptsize,
+    n/.style={circle, thick, minimum size=0.42cm, inner sep=0pt}]
+  \node[font=\sffamily\bfseries\small, text=brickC] at (1.5,2.9) {Bus};
+  \foreach \i in {0,...,3} { \node[n, draw=brickC, fill=brickC!18] (b\i) at (\i*1.0,2.0) {\i}; \draw[thick] (b\i) -- (\i*1.0,1.2); }
+  \draw[very thick, brickC!70!black] (-0.4,1.2) -- (3.4,1.2);
+  \node[text=coreGrey, align=center] at (1.5,0.6) {one message at a time;\\every node sees it};
+  \begin{scope}[xshift=5.4cm, yshift=1.5cm]
+  \node[font=\sffamily\bfseries\small, text=tealC!80!black] at (0,1.4) {Ring};
+  \foreach \i in {0,...,7} { \node[n, draw=tealC, fill=tealC!18] (r\i) at ({90-\i*45}:1.0) {\i}; }
+  \foreach \i [evaluate=\i as \j using {int(mod(\i+1,8))}] in {0,...,7} { \draw[thick, tealC!80!black] (r\i) -- (r\j); }
+  \end{scope}
+  \begin{scope}[xshift=7.6cm, yshift=0.5cm]
+  \node[font=\sffamily\bfseries\small, text=plumC] at (1.2,2.4) {2D mesh};
+  \foreach \x in {0,...,3} \foreach \y in {0,...,3} {
+    \node[n, minimum size=0.32cm, draw=plumC, fill=plumC!18] (m\x\y) at (\x*0.8,\y*0.6) {};
+  }
+  \foreach \x in {0,...,3} \foreach \y [count=\yy] in {0,...,2} { \draw[thick, plumC!70] (m\x\y) -- (m\x\yy); }
+  \foreach \y in {0,...,3} \foreach \x [count=\xx] in {0,...,2} { \draw[thick, plumC!70] (m\x\y) -- (m\xx\y); }
+  \end{scope}
+\end{tikzpicture}}
+\captionof{figure}[Three interconnect topologies]{A bus, an eight-node ring and a
+$4\times4$ mesh. A bus delivers each message to every node; rings and meshes
+carry point-to-point messages and scale further.}
+\label{fig:topologies}
+\end{minipage}\hfill
+\begin{minipage}[c]{0.31\linewidth}\centering\small
+\captionof{table}{Diameter and bisection bandwidth for $N$ nodes~\cite[\S12.6.3]{sarangi2025basic}.}
+\label{tab:topologies}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+ & Diam. & Bisect. \\
+\midrule
+Ring & $N/2$ & 2 \\
+Mesh & $2\sqrt{N}-2$ & $\sqrt{N}$ \\
+Torus & $\approx\sqrt{N}$ & $2\sqrt{N}$ \\
+Fat tree & $2\log N$ & $N/2$ \\
+\bottomrule
+\end{tabular}
+\end{minipage}
+\end{figure}
+
+A bus has a property the other topologies do not get for free. Only one message
+is on it at a time, so every node sees every message in the same order.
+Chapter~4 uses this property.
+
+% ---------------------------------------------------------------
+\section{Amdahl's Law and the Need for Coherence}
+\label{sec:par-amdahl}
+\label{sec:par-coherence}
+\sectionmap{[Amdahl's law [Parallel fraction f] [Speedup saturates at 1/(1-f)]
+  [Private caches + shared memory = coherence]]}
+\index{Amdahl's law}%
+
+If a fraction $f$ of the work spreads perfectly over $p$ cores and the rest runs on
+one core, the speedup is~\cite{amdahl1967validity}\cite[\S12.2.3]{sarangi2025basic}
+\begin{equation}
+  S(p) = \frac{1}{(1-f) + f/p},
+  \label{eq:amdahl}
+\end{equation}
+which tends to $1/(1-f)$ as $p$ grows (\cref{fig:amdahl}). A system close to this
+ceiling can behave quite differently from the same system with two cores, which is
+why our experiments sweep 2, 4, 8 and 16 cores.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}
+  \begin{axis}[width=10.5cm, height=5cm,
+      xlabel={Number of cores, $p$}, ylabel={Speedup $S(p)$},
+      xmin=1, xmax=64, ymin=0, ymax=16,
+      xtick={1,2,4,8,16,32,64}, xticklabels={1,2,4,8,16,32,64},
+      xmode=log, log basis x=2,
+      legend pos=north west, legend style={font=\small},
+      grid=major, grid style={coreGrey!15},
+      label style={font=\small}, tick label style={font=\small}]
+    \addplot[very thick, tealC, domain=1:64, samples=100] {1/((1-0.95)+0.95/x)};
+    \addlegendentry{$f=0.95$}
+    \addplot[very thick, plumC, domain=1:64, samples=100] {1/((1-0.80)+0.80/x)};
+    \addlegendentry{$f=0.80$}
+    \addplot[very thick, amberC, domain=1:64, samples=100] {1/((1-0.50)+0.50/x)};
+    \addlegendentry{$f=0.50$}
+  \end{axis}
+\end{tikzpicture}
+\caption[Amdahl's law]{\Cref{eq:amdahl} for three parallel fractions. With
+95\,\% of the program parallel, speedup can never pass $1/(1-f)=20$, and at 16
+cores it is well below that.}
+\label{fig:amdahl}
+\end{figure}
+
+Chapters~2 and~3 have now made two design choices. Each core has a private cache
+so that the first level stays fast (\cref{sec:cache-private}), and all cores share
+one address space so that programs like \cref{lst:omp} are easy to write. Together
+they allow one memory block to sit in several private caches at once, so the
+system needs a rule for keeping the copies consistent (coherence) and hardware
+that enforces the rule on every access (a coherence protocol). Chapter~4 covers
+both.

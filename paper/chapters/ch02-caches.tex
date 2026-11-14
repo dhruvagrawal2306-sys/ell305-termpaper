@@ -1,0 +1,330 @@
+% ===============================================================
+%  Chapter 2 -- Caches and the Memory Hierarchy        (Part I)
+% ===============================================================
+\chapter{Caches and the Memory Hierarchy}
+\label{ch:caches}
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  chapter map,
+  [Chapter 2
+    [Why caches work [SRAM vs DRAM] [Locality]]
+    [Organisation [Tag | index | offset] [Set-associative]]
+    [Writes and misses [Write-back] [Dirty victims]]
+    [Hierarchy {\&} AMAT [Three Cs]]
+    [Private vs shared]
+  ]
+\end{forest}}
+\caption[]{Structure of Chapter~2: one cache, then a
+hierarchy of caches, then the choice of private caches per core that the rest of
+the report depends on.}
+\label{fig:ch2-map}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{Why Caches Exist and Why They Work}
+\label{sec:cache-why}
+\label{sec:cache-locality}
+\sectionmap{[Why caches work [DRAM is slow but dense] [SRAM is fast but costly]
+  [Locality makes a small copy useful]]}
+\index{locality}%
+
+Main memory is DRAM, with one transistor and one capacitor per bit. It is dense
+and cheap, and an access takes typically 100--300 processor
+cycles~\cite[\S11.1.7]{sarangi2025basic}. Storage inside the processor is SRAM,
+a six-transistor latch per bit, which answers in one or two cycles but takes
+several times the area~\cite[\S7.4]{sarangi2025basic}. A
+\emph{cache}\index{cache} is a small SRAM store between the core and memory that
+holds copies of the data the core is likely to use next.
+
+A small cache is useful because programs show
+\emph{locality}\index{locality}~\cite[\S11.1.3--11.1.6]{sarangi2025basic}. With
+temporal locality, a location used now is likely to be used again soon, as a loop
+counter is. With spatial locality, nearby locations are likely to be used soon, as
+the next array element is. A cache keeps recently used data for the first reason,
+and for the second it moves data in contiguous \glspl{block} of typically 32 to
+128 bytes~\cite[\S11.1.8]{sarangi2025basic} (\cref{fig:locality}).
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}
+\begin{tikzpicture}[font=\sffamily\scriptsize]
+  \foreach \i in {0,...,11} {
+    \ifnum\i<4 \def\fc{tealC!35}\else\ifnum\i<8 \def\fc{amberC!22}\else\def\fc{white}\fi\fi
+    \draw[thick, draw=slateC, fill=\fc] (\i*0.8,0) rectangle +(0.8,0.6);
+    \node at (\i*0.8+0.4,0.3) {a[\i]};
+  }
+  \draw[decorate, decoration={brace, amplitude=4pt, mirror}, tealC!80!black, thick]
+    (0,-0.1) -- (3.2,-0.1)
+    node[midway, below=5pt, align=center, text=tealC!70!black]
+    {one 64-byte block:\\fetched together (spatial)};
+  \draw[decorate, decoration={brace, amplitude=4pt, mirror}, amberC!90!black, thick]
+    (3.2,-0.1) -- (6.4,-0.1)
+    node[midway, below=5pt, align=center, text=amberC!80!black]
+    {next block:\\one miss, then hits};
+  \draw[-{Stealth}, thick, plumC] (0.4,1.5) -- (0.4,0.65);
+  \draw[-{Stealth}, thick, plumC] (1.2,1.5) -- (1.2,0.65);
+  \draw[-{Stealth}, thick, plumC] (2.0,1.5) -- (2.0,0.65);
+  \node[text=plumC, anchor=west] at (2.4,1.3)
+       {\texttt{sum = 0; for each i: sum = sum + a[i]}};
+  \node[draw, thick, rounded corners=2pt, fill=roseC!10, draw=roseC, anchor=west] at (6.9,-0.7)
+       {\texttt{sum}, \texttt{i}: reused every iteration (temporal)};
+\end{tikzpicture}
+\end{bigfig}
+\caption[Temporal and spatial locality]{Both kinds of locality in one loop.
+Elements of \texttt{a} that share a block arrive together, so the miss on
+\texttt{a[0]} brings \texttt{a[1]}--\texttt{a[3]} with it. The variables
+\texttt{sum} and \texttt{i} are used on every iteration.}
+\label{fig:locality}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{How a Cache Is Organised}
+\label{sec:cache-ops}
+\label{sec:cache-mapping}
+\sectionmap{[Organisation [Tag array + data array] [Address = tag | index | offset]
+  [Set-associative: a few places per block]]}
+\index{set-associative cache}\index{Sarangi textbook}%
+
+A cache has two SRAM arrays side by side. The tag array records which memory block
+each entry holds and the data array holds the bytes~\cite[\S11.2.2]{sarangi2025basic}.
+The address is split into an offset (the byte within the block), an index (the
+set to search) and a tag, which is compared with the stored tags to detect a hit.
+A direct-mapped cache has one possible entry for each block. In a set-associative
+cache\index{set-associative cache} the index picks a set of a few entries and all
+of them are checked at once (\cref{fig:mapping}). Almost every real cache is set
+associative.
+
+Sarangi breaks the work of a cache into six operations: lookup, data read, data
+write, insert, replace and evict~\cite[\S11.2.1]{sarangi2025basic}. On a miss the
+cache fetches the block, picks a victim if the set is full (randomly, first-in
+first-out or least recently used), evicts it and inserts the new
+block~\cite[\S11.2.5]{sarangi2025basic}. A coherence protocol adds its own actions
+to these same operations (Chapter~5).
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}
+\begin{tikzpicture}[font=\sffamily\scriptsize]
+  \begin{scope}[yshift=5.7cm, xshift=1.0cm]
+  \draw[thick, draw=slateC, fill=skyC!14]   (0,0)   rectangle (5.0,0.6);
+  \draw[thick, draw=slateC, fill=amberC!22] (5.0,0) rectangle (7.6,0.6);
+  \draw[thick, draw=slateC, fill=leafC!18]  (7.6,0) rectangle (9.0,0.6);
+  \node at (2.5,0.3) {Tag: identifies the block};
+  \node at (6.3,0.3) {Index: the set};
+  \node at (8.3,0.3) {Offset};
+  \end{scope}
+  \node[font=\sffamily\bfseries\small, text=tealC!80!black] at (1.0,4.6) {Direct-mapped (8 sets $\times$ 1 way)};
+  \foreach \s in {0,...,7} {
+    \pgfmathsetmacro{\y}{3.9-\s*0.5}
+    \ifnum\s=5 \def\fc{amberC!40}\else\def\fc{white}\fi
+    \node[anchor=east, text=coreGrey] at (-0.1,\y) {set \s};
+    \draw[thick, draw=tealC, fill=\fc] (0,\y-0.22) rectangle (2.0,\y+0.22);
+  }
+  \node[text=brickC, align=left, anchor=west] at (2.2,1.4) {block 13:\\$13 \bmod 8 = 5$\\one possible place};
+  \begin{scope}[xshift=7.2cm]
+  \node[font=\sffamily\bfseries\small, text=plumC] at (1.0,4.6) {2-way set-associative (4 sets $\times$ 2 ways)};
+  \foreach \s in {0,...,3} {
+    \pgfmathsetmacro{\y}{3.9-\s*1.0}
+    \ifnum\s=1 \def\fc{amberC!40}\else\def\fc{white}\fi
+    \node[anchor=east, text=coreGrey] at (-0.1,\y-0.25) {set \s};
+    \draw[thick, draw=plumC, fill=\fc] (0,\y-0.47) rectangle (2.0,\y-0.03);
+    \draw[thick, draw=plumC, fill=\fc] (0,\y-0.03) rectangle (2.0,\y+0.22);
+  }
+  \node[text=brickC, align=left, anchor=west] at (2.2,2.9) {block 13:\\$13 \bmod 4 = 1$\\either way of set 1};
+  \end{scope}
+\end{tikzpicture}
+\end{bigfig}
+\caption[Address split and cache organisation]{Top: the address split used for
+lookup. Bottom: eight entries arranged two ways. Block~13 has one possible entry
+in the direct-mapped cache and two in the two-way cache, so it is evicted by
+conflicts less often.}
+\label{fig:mapping}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{Writes, Misses and Dirty Victims}
+\label{sec:cache-write}
+\label{sec:cache-access}
+\label{sec:cache-replacement}
+\sectionmap{[Writes and misses [Write-through: update below every time]
+  [Write-back: update only on eviction] [Dirty victim: write back first]]}
+\index{MESI}\index{MOESI}\index{MSI}\index{write-back cache}\index{write-back cache!dirty bit}%
+
+A read leaves the cache and memory in agreement, but a write does not, so the
+cache must decide when to update the level below~\cite[\S11.2.3]{sarangi2025basic}.
+A \gls{writethrough} sends every write down at once. The two levels then always
+agree, but every store costs traffic. A \gls{writeback}\index{write-back cache}
+updates only itself and sets a modified (dirty) bit, and the level below is
+updated when the dirty block is evicted~\cite[\S11.2.6]{sarangi2025basic}. Since
+programs write the same locations many times, almost every modern cache is write
+back (\cref{fig:write-policies}).
+
+\Cref{fig:access-tree} puts these steps into one decision tree. The branch at the
+bottom left matters most for the rest of this report: evicting a modified block
+costs a write to the level below, and evicting a clean block costs nothing. While
+a block is dirty, the cache holds the only correct copy of its data and memory is
+stale. The Modified state of MSI, MESI and MOESI (Chapter~5) is this dirty bit
+extended to a system with many caches.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[c]{0.46\linewidth}\centering
+\adjustbox{max width=\linewidth}{%
+\begin{tikzpicture}[font=\sffamily\scriptsize,
+    c/.style={draw, thick, rounded corners=2pt, minimum width=2.1cm,
+              minimum height=0.65cm, align=center},
+    a/.style={-{Stealth[length=5pt]}, thick}]
+  \node[font=\sffamily\bfseries\small, text=tealC!80!black] at (1.1,3.3) {Write-through};
+  \node[c, fill=slateC!12, draw=slateC] (p1) at (1.1,2.5) {Processor};
+  \node[c, fill=tealC!14, draw=tealC] (c1) at (1.1,1.35) {Cache};
+  \node[c, fill=leafC!14, draw=leafC] (m1) at (1.1,0.2) {Memory};
+  \draw[a] (p1) -- node[right]{write} (c1);
+  \draw[a, brickC] (c1) -- node[right]{every write} (m1);
+  \begin{scope}[xshift=3.6cm]
+  \node[font=\sffamily\bfseries\small, text=plumC] at (1.1,3.3) {Write-back};
+  \node[c, fill=slateC!12, draw=slateC] (p2) at (1.1,2.5) {Processor};
+  \node[c, fill=plumC!12, draw=plumC] (c2) at (1.1,1.35) {Cache\\[-1pt]\tiny tag $|$ modified $|$ data};
+  \node[c, fill=leafC!14, draw=leafC] (m2) at (1.1,0.2) {Memory};
+  \draw[a] (p2) -- node[right]{write} (c2);
+  \draw[a, leafC, dashed] (c2) -- node[right, align=left]{on\\eviction} (m2);
+  \end{scope}
+\end{tikzpicture}}
+\caption[Write-through and write-back caches]{The two write policies. A
+write-back cache defers the memory update until eviction.}
+\label{fig:write-policies}
+\end{minipage}\hfill
+\begin{minipage}[c]{0.5\linewidth}\centering
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  decision tree,
+  [Tag matches in\\the indexed set?
+    [Hit, el=yes
+      [Return data, el=load]
+      [Update data;\\set modified, el=store]]
+    [Miss, el=no
+      [Free entry?
+        [Insert, el=yes]
+        [Choose victim, el=no
+          [Victim\\modified?
+            [{Write back,\\then evict}, el=yes]
+            [Evict\\silently, el=no]]]]]]
+\end{forest}}
+\caption[Decision tree: one cache access]{One access to a write-back cache. Only
+a modified victim forces a write to the level below.}
+\label{fig:access-tree}
+\end{minipage}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{The Memory Hierarchy, AMAT and the Three Cs}
+\label{sec:cache-hierarchy}
+\label{sec:cache-3c}
+\sectionmap{[Hierarchy [L1 small and fast] [{L2, L3 larger and slower}]
+  [AMAT measures the whole] [Three kinds of miss]]}
+\index{AMAT}\index{Sarangi textbook}%
+
+Processors stack several levels of cache, each larger and slower than the one
+above it (\cref{fig:hierarchy})~\cite[\S11.1.7]{sarangi2025basic}. The usual
+figure of merit is the \gls{amat}\index{AMAT}. For two levels of
+cache~\cite[\S11.3.1]{sarangi2025basic},
+\begin{equation}
+  \mathrm{AMAT} = T_{L1} + m_{L1}\bigl(T_{L2} + m_{L2}\,T_{\mathrm{mem}}\bigr),
+  \label{eq:amat}
+\end{equation}
+where $T$ is the latency of each level and $m$ its local miss rate. With
+$T_{L1}=1$, $T_{L2}=10$ and $T_{\mathrm{mem}}=100$ cycles and both miss rates at
+10\,\%, AMAT is 3 cycles, compared with 100 cycles without caches. This is the
+33$\times$ improvement of Sarangi's Example~147.
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}[0.85]
+\begin{tikzpicture}[font=\sffamily\small]
+  \def\layer#1#2#3#4#5{
+    \draw[thick, fill=#5!18, draw=#5] (-#2/2,#1) rectangle (#2/2,#1+0.8);
+    \node at (0,#1+0.4) {#3};
+    \node[font=\sffamily\scriptsize, text=#5!80!black, anchor=west] at (#2/2+0.3,#1+0.4) {#4};
+  }
+  \layer{0}{9.0}{Main memory (DRAM)}{100--300 cycles, gigabytes}{leafC}
+  \layer{1.05}{6.8}{L3 cache (shared)}{tens of cycles, megabytes}{amberC}
+  \layer{2.1}{4.6}{L2 cache}{5--15 cycles, hundreds of KB}{plumC}
+  \layer{3.15}{2.4}{L1 cache}{1--2 cycles, tens of KB}{tealC}
+\end{tikzpicture}
+\end{bigfig}
+\caption[The memory hierarchy]{Each level is larger and slower than the one
+above. L1, L2 and memory latencies follow Sarangi~\cite[\S11.1.7]{sarangi2025basic};
+the L3 figures are indicative.}
+\label{fig:hierarchy}
+\end{figure}
+
+Misses are traditionally put into three classes~\cite[\S11.3.2]{sarangi2025basic}
+(\cref{tab:three-c}). All three describe a single core and its own cache. A
+fourth class, which appears only when cores share data, comes up in Part~II.
+
+\begin{table}[htbp]
+\centering
+\caption{The three classic kinds of cache miss.}
+\label{tab:three-c}
+\small
+\begin{tabular}{@{}l p{5.4cm} p{4.0cm}@{}}
+\toprule
+Kind & Cause & Typical remedy \\
+\midrule
+Compulsory (cold) & first access to a block & larger blocks, prefetching \\
+Capacity & working set larger than the cache & larger cache \\
+Conflict & too many blocks map to one set & higher associativity \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------
+\section{Private and Shared Caches}
+\label{sec:cache-private}
+\sectionmap{[Private vs shared [{Shared: one copy, many ports}]
+  [Private: small and close to the core] [Result: many copies of one block]]}
+
+On a multicore chip the cores can share one cache or each have their own
+(\cref{fig:private-shared}). A shared cache keeps one copy of each block but has
+to serve every core at once. The area of a cache grows roughly with the square of
+its number of ports, and a large shared array cannot sit close to every
+core~\cite[\S12.4.4]{sarangi2025basic}. Private caches are small and sit next to
+their core. Modern chips therefore give each core a private L1 (and usually L2)
+and share only the \gls{llc}.
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}[0.9]
+\begin{tikzpicture}[font=\sffamily\scriptsize,
+    core/.style={draw, thick, rounded corners=2pt, fill=slateC!14, draw=slateC,
+                 minimum width=1.2cm, minimum height=0.55cm},
+    pc/.style={draw, thick, rounded corners=2pt, fill=tealC!16, draw=tealC,
+               minimum width=1.2cm, minimum height=0.5cm},
+    sc/.style={draw, thick, rounded corners=2pt, fill=amberC!16, draw=amberC,
+               minimum height=0.6cm}]
+  \node[font=\sffamily\bfseries\small] at (1.95,2.6) {All-shared L1};
+  \foreach \i in {0,1,2,3} { \node[core] (a\i) at (\i*1.3,1.8) {P\i}; \draw (a\i) -- (\i*1.3,1.0); }
+  \node[sc, minimum width=5.1cm, fill=brickC!12, draw=brickC] at (1.95,0.7) {one shared L1: many ports, slow};
+  \begin{scope}[xshift=7.2cm]
+  \node[font=\sffamily\bfseries\small] at (1.95,2.6) {Private L1, shared L2};
+  \foreach \i in {0,1,2,3} {
+    \node[core] (b\i) at (\i*1.3,1.8) {P\i};
+    \node[pc] (l\i) at (\i*1.3,1.05) {L1};
+    \draw (b\i) -- (l\i); \draw (l\i) -- (\i*1.3,0.55);
+  }
+  \node[sc, minimum width=5.1cm] at (1.95,0.25) {shared L2 (last level)};
+  \end{scope}
+\end{tikzpicture}
+\end{bigfig}
+\caption[Shared and private caches]{Two ways to organise the caches of a
+four-core chip. Real designs use private L1 caches for speed, and as a result one
+block can be copied into several of them.}
+\label{fig:private-shared}
+\end{figure}
+
+This report assumes the right-hand design throughout. It is fast, and it lets
+the same memory block sit in several private caches at the same time. Chapter~3
+explains why many cores run one program over a shared memory, and Chapter~4
+explains how the private copies are kept consistent.

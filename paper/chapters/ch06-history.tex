@@ -1,0 +1,148 @@
+% ===============================================================
+%  Chapter 6 -- A History of the Protocols               (Part I)
+% ===============================================================
+\chapter{A History of the Protocols}
+\label{ch:history}
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  chapter map,
+  [Chapter 6
+    [First schemes [Directory 1978] [Write-once 1983]]
+    [Snooping in the 1980s [Illinois {\&} Berkeley] [MOESI vocabulary 1986]]
+    [Beyond the bus [{DASH, tokens}] [{AMD MOESI, Intel MESIF}]]
+  ]
+\end{forest}}
+\caption[]{Structure of Chapter~6: the protocols of
+Chapter~5 in the order they appeared.}
+\label{fig:ch6-map}
+\end{figure}
+
+The protocols of Chapter~5 grew out of work on bus-based multiprocessors in the
+1980s, long before multicore chips. \Cref{fig:timeline} shows the milestones that
+matter for this report, and Part~III returns to several of them.
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}
+\begin{tikzpicture}[font=\sffamily\scriptsize,
+    ev/.style={draw, thick, rounded corners=2pt, align=center, inner sep=2pt,
+               text width=2.1cm}]
+  \draw[very thick, slateC, -{Stealth}] (-0.6,0) -- (13.9,0);
+  \foreach \i/\y/\lev/\txt/\col in {
+      0/1978/1.15/{Directory scheme\\Censier {\&} Feautrier}/amberC,
+      1/1983/-1.15/{Write-once\\Goodman}/skyC,
+      2/1984/2.55/{Illinois protocol (MESI)\\Papamarcos {\&} Patel}/mesiBlue,
+      3/1986/-2.55/{MOESI states\\Sweazey {\&} Smith}/moesiOrange,
+      4/1986/1.15/{Six protocols compared\\Archibald {\&} Baer}/plumC,
+      5/1990/-1.15/{DASH directory\\Lenoski et al.}/amberC,
+      6/2001/2.55/{First dual-core chip\\IBM POWER4}/tealC,
+      7/2003/-2.55/{Token coherence\\Martin et al.}/brickC,
+      8/2005/1.15/{Intel and AMD\\go dual-core}/tealC,
+      9/2009/-1.15/{MESIF report\\Goodman {\&} Hum}/roseC,
+      10/2012/2.55/{``Coherence is\\here to stay''}/leafC} {
+    \pgfmathsetmacro{\x}{\i*1.32}
+    \pgfmathsetmacro{\e}{\lev>0 ? \lev-0.42 : \lev+0.42}
+    \draw[\col, thick] (\x,0) -- (\x,\e);
+    \fill[\col] (\x,0) circle (2.4pt);
+    \node[ev, draw=\col, fill=\col!9] at (\x,\lev) {\textbf{\y}\\\txt};
+  }
+\end{tikzpicture}
+\end{bigfig}
+\caption[Timeline of coherence protocols]{Milestones from the first directory
+scheme to current multicore chips, in date order but not to scale. Sources are
+cited in the text.}
+\label{fig:timeline}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{The First Coherence Schemes}
+\label{sec:hist-before}
+\label{sec:hist-first}
+\sectionmap{[First schemes [Several processors on one bus] [1978: a central directory]
+  [1983: write-once on a bus]]}
+\index{snooping protocol}\index{directory protocol}%
+
+Multiprocessors go back to the 1960s and 1970s, and by the late 1990s four or
+eight processors commonly shared one motherboard and one
+bus~\cite[\S12.1]{sarangi2025basic}. As soon as processors with private caches
+shared a bus, coherence became an engineering problem. The first general scheme
+was a directory. Censier and Feautrier proposed in 1978 that memory keep, for each
+block, a record of the caches holding it, so that invalidations went only where
+they were needed~\cite{censier1978directory}. The first widely known snooping
+protocol was Goodman's write-once~\cite{goodman1983writeonce}, with the states
+Invalid, Valid, Reserved and Dirty~\cite{archibald1986evaluation}. The first write
+to a block went through to memory and invalidated the other copies, and later
+writes stayed in the cache. Every later protocol keeps the main idea of
+write-once, which is to use the bus both for moving data and for telling other
+caches what has happened to it.
+
+% ---------------------------------------------------------------
+\section{Snooping Protocols of the 1980s and the MOESI Vocabulary}
+\label{sec:hist-1980s}
+\label{sec:hist-moesi}
+\sectionmap{[1980s snooping [Illinois: the E state] [Berkeley: a shared-dirty owner]
+  [Firefly and Dragon: update] [1986: five states describe them all]]}
+\index{MESI}\index{MOESI}\index{MSI}\index{MESIF}\index{Owned state}\index{Exclusive state}\index{snooping protocol}\index{write-update}\index{Berkeley protocol}\index{Dragon protocol}\index{Firefly protocol}\index{Illinois protocol}\index{Futurebus}\index{owner}%
+
+In 1986 Archibald and Baer described and simulated six snooping protocols side by
+side~\cite{archibald1986evaluation}. \Cref{tab:hist-protocols} translates their
+state names into the terms of Chapter~5. Two of them matter most here. The
+Illinois protocol of Papamarcos and Patel added a Valid-Exclusive state so that a
+later write needed no bus transaction~\cite{papamarcos1984illinois}, which is
+MESI. The Berkeley protocol had a Shared-Dirty state in which one cache kept
+modified data, other caches held copies, and the Shared-Dirty cache supplied the
+data to readers~\cite{archibald1986evaluation}. That is the \stO\ state before it
+had the name. Firefly and Dragon were write-update protocols.
+
+\begin{table}[htbp]
+\centering
+\caption{The six protocols evaluated by Archibald and
+Baer~\cite{archibald1986evaluation}, with each original state name mapped to
+its nearest MOESI equivalent.}
+\label{tab:hist-protocols}
+\small
+\begin{tabular}{@{}l l l l@{}}
+\toprule
+Protocol & Original states & In MOESI terms & Strategy \\
+\midrule
+Write-once & Invalid, Valid, Reserved, Dirty & I, S, E, M & invalidate \\
+Synapse    & Invalid, Valid, Dirty & I, S, M & invalidate \\
+Illinois   & Invalid, Valid-Exclusive, Shared, Dirty & I, E, S, M & invalidate \\
+Berkeley   & Invalid, Valid, Shared-Dirty, Dirty & I, S, \textbf{O}, M & invalidate \\
+Firefly    & Valid-Exclusive, Shared, Dirty & E, S, M & update \\
+Dragon     & Valid-Exclusive, Shared-Clean, Shared-Dirty, Dirty & E, S, \textbf{O}, M & update \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+By the mid-1980s these protocols used different names for overlapping ideas.
+While working on the IEEE Futurebus standard, Sweazey and Smith picked out five
+states (Modified, Owned, Exclusive, Shared and Invalid) that could describe a
+whole class of protocols, and showed how protocols of that class could share one
+bus~\cite{sweazey1986moesi}. MOESI began as a shared vocabulary for existing
+protocols more than as one new design. MESI and the ownership idea each add one
+state to MSI, MOESI combines the two, and MESIF (Part~III) extends MESI in another
+direction.
+
+% ---------------------------------------------------------------
+\section{Beyond the Bus and onto the Chip}
+\label{sec:hist-scaling}
+\label{sec:hist-multicore}
+\sectionmap{[Recent history [1990: DASH directory] [2003: token coherence]
+  [AMD: MOESI; Intel: MESIF]]}
+\index{MOESI}\index{MSI}\index{MESIF}\index{directory protocol}\index{token coherence}\index{DASH}%
+
+A bus carries one message at a time, which limits the number of processors it can
+serve. The Stanford DASH machine of 1990 kept MSI-family states but replaced the
+bus with a directory and a network of point-to-point links~\cite{lenoski1990dash}.
+In 2003 Martin, Hill and Wood proposed token coherence~\cite{martin2003token}.
+Both come back in Part~III. When the cores moved onto one chip in the
+2000s~\cite[\S12.1]{sarangi2025basic}, AMD documented a MOESI
+protocol~\cite{amd64vol2} and Intel's QuickPath processors adopted
+MESIF~\cite{goodman2009mesif}. In 2012 Martin, Hill and Sorin argued that hardware
+coherence will stay practical as core counts grow~\cite{martin2012here}. AMD and
+Intel have kept different extensions of the same protocol for years, and Part~II
+asks what each extension costs.

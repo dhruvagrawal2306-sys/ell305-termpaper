@@ -1,0 +1,55 @@
+Rule~6 of the course asks for reading indices. The five numeric indices below are
+the ones described by the reference the course gives,
+\url{https://www.analyzemywriting.com/readability_indices.html}: the Gunning fog
+index, the Flesch--Kincaid grade level, the SMOG index, the Coleman--Liau index and
+the Automated Readability Index (ARI). Each estimates the United States school grade
+needed to read the text: 8 to 12 suits a general adult reader, and scholarly or
+technical writing usually scores above 12. As on that site, we also give the mean
+and median of the five, and the Flesch Reading Ease score (0--100, higher is
+easier). The Fry and Raygor estimates are read off graphs, so we give their inputs.
+
+The indices were computed with the \texttt{textstat} Python package on the running
+prose of the compiled report: every paragraph of at least 25 words, taken from the
+PDF of this version. Tables, figure labels, code and short captions are left out,
+since sentence-based formulas give meaningless values on them. Syllables are
+estimated from spelling, so the values can differ slightly from those of the web
+tool. The script is \texttt{simulator/readability.py} and can be rerun on any build.
+The last row applies the same procedure to the previous version (v1.0) of the
+report, for comparison.
+
+\begin{table}[htbp]
+\centering
+\caption{Reading indices of the prose of each Part (grade levels, except Flesch
+Reading Ease).}
+\label{tab:readability}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}l r r r r r r r r r r@{}}
+\toprule
+ & Words & Words/ & Fog & F--K & SMOG & C--L & ARI & Mean & Median & Flesch \\
+ & & sentence & & & & & & grade & grade & ease \\
+\midrule
+Ch.~1 & 409 & 16.4 & 9.5 & 8.5 & 11.4 & 10.4 & 10.5 & 10.1 & 10.4 & 63.3 \\
+Part I & 3,713 & 15.6 & 7.5 & 7.0 & 9.8 & 7.9 & 8.3 & 8.1 & 7.9 & 72.6 \\
+Part II & 2,215 & 16.3 & 7.8 & 7.3 & 9.8 & 8.4 & 8.8 & 8.4 & 8.4 & 71.8 \\
+Part III & 5,616 & 17.4 & 8.4 & 8.9 & 11.2 & 9.4 & 10.5 & 9.7 & 9.4 & 62.3 \\
+Part IV & 3,843 & 18.1 & 8.5 & 8.0 & 9.8 & 7.9 & 9.3 & 8.7 & 8.5 & 70.0 \\
+Part V & 2,559 & 18.3 & 8.8 & 8.1 & 10.3 & 9.2 & 10.1 & 9.3 & 9.2 & 69.8 \\
+Part VI & 1,794 & 14.6 & 7.3 & 6.6 & 9.1 & 7.5 & 7.6 & 7.6 & 7.5 & 73.6 \\
+Part VII & 1,652 & 19.9 & 10.2 & 8.7 & 11.1 & 9.3 & 11.1 & 10.1 & 10.2 & 68.2 \\
+\midrule
+Whole report & 21,801 & 17.1 & 7.7 & 7.6 & 10.3 & 8.6 & 9.4 & 8.7 & 8.6 & 71.0 \\
+\midrule
+v1.0, whole & 29,327 & 17.6 & 7.9 & 9.0 & 10.9 & 9.3 & 10.3 & 9.5 & 9.3 & 62.1 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+For the whole report the five grade levels range from 7.6
+to 10.3, with a mean of 8.7, which these measures rate as suitable for a general adult reader.
+The formulas count syllables and word lengths, so the many short technical terms of
+this report (MESI, MOESI, DSR, LLC, AMAT) count as easy words; the indices therefore
+understate how hard the text is for a reader new to the subject. The inputs to the
+Fry graph are 5.9 sentences and 142 syllables per 100 words, and the inputs to the
+Raygor graph are 5.9 sentences and 28 words of six or more letters per 100 words;
+these are the coordinates at which the report would be plotted on each graph.

@@ -1,0 +1,78 @@
+% ===============================================================
+%  Glossary entries (rule 8). Printed by \printnoidxglossary in
+%  main.tex; \glsaddall there makes every entry appear.
+% ===============================================================
+\newglossaryentry{amat}{name={AMAT}, description={Average memory access time: the
+  mean number of cycles a memory access takes, counting hits and the extra time
+  spent on misses (\cref{eq:amat})}}
+\newglossaryentry{block}{name={cache block}, description={The unit a cache stores
+  and moves, 64 bytes in this report. Also called a cache line}}
+\newglossaryentry{busrd}{name={BusRd}, description={Bus read request. A cache sends
+  it on a read miss to obtain a readable copy of a block}}
+\newglossaryentry{busrdx}{name={BusRdX}, description={Bus read-exclusive request
+  (also called read-for-ownership or read-with-intent-to-modify). A cache sends it
+  on a write miss; every other copy is invalidated}}
+\newglossaryentry{busupgr}{name={BusUpgr}, description={Upgrade request. A cache
+  that already holds a valid shared copy sends it before writing, to invalidate
+  the other copies without fetching data}}
+\newglossaryentry{c2c}{name={cache-to-cache transfer}, description={A data
+  response supplied by another cache instead of by memory}}
+\newglossaryentry{coherence}{name={cache coherence}, description={The guarantee
+  that every write to one address eventually becomes visible to all cores
+  (completion) and that all cores see writes to that address in one order
+  (order)}}
+\newglossaryentry{directory}{name={directory protocol}, description={A coherence
+  protocol in which a table at the block's home node records which caches hold
+  the block, so requests go point to point instead of by broadcast}}
+\newglossaryentry{dirty}{name={dirty block}, description={A block whose cached
+  copy has been written and so differs from memory. It must be written back
+  before memory can serve it}}
+\newglossaryentry{dsr}{name={DSR}, description={Dirty Sharing Ratio: the fraction
+  of a MESI run's coherence transactions that are reads served by a cache holding
+  the block in \stM. Defined in \cref{ch:dsr}}}
+\newglossaryentry{epoch}{name={dirty epoch}, description={The interval from the
+  write that makes a block dirty to the moment its data reaches memory}}
+\newglossaryentry{fwb}{name={forced writeback}, description={The memory write
+  MESI performs when a cache holding a block in \stM\ supplies it to a reader and
+  drops to \stS. MOESI removes it by moving to \stO}}
+\newglossaryentry{invalidate}{name={write-invalidate}, description={A coherence
+  policy in which a writer removes every other cached copy before writing. MSI,
+  MESI and MOESI are write-invalidate protocols}}
+\newglossaryentry{llc}{name={LLC}, description={Last-level cache: the cache
+  shared by all cores, just above main memory}}
+\newglossaryentry{mesi}{name={MESI}, description={Four-state write-invalidate
+  protocol (Modified, Exclusive, Shared, Invalid). It adds \stE\ to MSI so a
+  private block can be written without a bus transaction}}
+\newglossaryentry{mesif}{name={MESIF}, description={Intel's variant of MESI that
+  adds a Forward state naming one clean sharer as the responder}}
+\newglossaryentry{moesi}{name={MOESI}, description={Five-state protocol that adds
+  the Owned state to MESI, letting modified data be shared without a writeback}}
+\newglossaryentry{msi}{name={MSI}, description={Three-state write-invalidate
+  protocol (Modified, Shared, Invalid), the base of the family}}
+\newglossaryentry{noc}{name={NoC}, description={Network on chip: the interconnect
+  that carries coherence messages between cores, caches and memory}}
+\newglossaryentry{openmp}{name={OpenMP}, description={A standard set of compiler
+  directives and library calls for writing shared-memory parallel programs in C,
+  C++ and Fortran}}
+\newglossaryentry{owner}{name={owner}, description={The single cache responsible
+  for a dirty block: it answers requests for the block and must write it back
+  when it evicts it}}
+\newglossaryentry{owned}{name={Owned state (\stO)}, description={MOESI state of a
+  dirty block that other caches may also hold in \stS. Memory is stale and the
+  \stO\ cache is the owner}}
+\newglossaryentry{sigma}{name={survival fraction ($\sigma$)}, description={The
+  fraction of a MESI run's saved writeback bytes that MOESI really saves, after
+  accounting for the writebacks MOESI still performs on eviction}}
+\newglossaryentry{snoop}{name={snooping protocol}, description={A coherence
+  protocol in which every cache watches a shared broadcast medium (a bus) and
+  reacts to the requests it sees}}
+\newglossaryentry{token}{name={token coherence}, description={A coherence scheme
+  in which each block has a fixed number of tokens; a cache needs one token to read
+  and all tokens to write}}
+\newglossaryentry{update}{name={write-update}, description={A coherence policy in
+  which a writer sends the new value to every cache holding a copy, instead of
+  invalidating them}}
+\newglossaryentry{writeback}{name={write-back cache}, description={A cache that
+  updates the level below only when a modified block is evicted}}
+\newglossaryentry{writethrough}{name={write-through cache}, description={A cache
+  that passes every write to the level below immediately}}

@@ -1,0 +1,1087 @@
+% ===============================================================
+%  PART IV -- Our Contribution (Chapters 15--16)
+%  Method and analysis only. Results are in Part VI; the simulator
+%  is described in Part V. Proofs are in Appendix D (rule 7).
+% ===============================================================
+
+\newtheorem{proposition}{Proposition}[chapter]
+
+\part{Our Contribution}
+\label{part:contribution}
+
+\begin{center}
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  part map,
+  [Part IV
+    [Ch.~15: A Controlled Method
+      [One changed variable] [Everything else held fixed] [Paired runs] [Correctness first]]
+    [Ch.~16: The Dirty Sharing Ratio
+      [One counter under MESI] [Dirty epochs] [An exact saving identity] [From bytes to time] [Hypotheses H1--H4]]
+  ]
+\end{forest}}
+\end{center}
+
+\begin{keybox}[What Part IV does]
+Part~III left two open questions (\cref{sec:cmp-gap}): none of the studies we
+found isolates the effect of the \stO\ state, and none offers a workload measure,
+taken under MESI, that predicts the gain from moving to MOESI. Chapter~15 answers
+the first with a controlled comparison in which \stO\ is the only difference
+between the two protocols. Chapter~16 answers the second with the Dirty Sharing
+Ratio and derives an exact identity linking it to the traffic MOESI saves. Four
+hypotheses, one per research question, close the Part. Everything here is derived
+from the counting rules of \cref{tab:counting-rules}; no result depends on a
+simulation.
+\end{keybox}
+
+% ===============================================================
+%  Chapter 15 -- A Controlled Method for Isolating the Owned State
+% ===============================================================
+\chapter{A Controlled Method for Isolating the Owned State}
+\label{ch:method}
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  chapter map,
+  [Chapter 15
+    [Why comparisons mislead [Whole protocols differ] [Confounders]]
+    [The one changed variable [Three rules differ] [Diff of the FSMs]]
+    [Held fixed {\&} paired [Controlled variables] [Same trace twice]]
+    [Same cache contents [Proposition 15.1] [Worked example]]
+    [Correctness first [Invariants] [Version numbers]]
+  ]
+\end{forest}}
+\caption[]{Structure of Chapter~15: why existing
+comparisons cannot isolate the \stO\ state, the single change the method makes,
+what it holds fixed, and how the runs are checked.}
+\label{fig:ch15-map}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{Why Existing Comparisons Cannot Isolate the Owned State}
+\label{sec:method-why}
+\sectionmap{[The difficulty [A protocol is many decisions] [Implementations differ in all of them]
+  [A measured gap has many causes] [We need one variable]]}
+\index{MESI}\index{MOESI}\index{Owned state}\index{coherence axioms}%
+
+A coherence protocol is made of many decisions: which states exist, who supplies
+data on a miss, when memory is updated, whether a clean block may be forwarded
+between caches, how races are resolved and how each message is timed. Two
+published implementations called ``MESI'' and ``MOESI'' differ in many of these at
+once. Chapter~14 showed this for the evaluations we reviewed
+(\cref{tab:evaluations}): the early study compared whole protocols, and the
+simulator studies used implementations that differ in several states and
+transitions, in one case without the \stM$\to$\stO\ transition at all. When such a
+study reports that MOESI is faster, the gap could come from \stO, from a better
+forwarding policy, from a different cache set-up, or from all of these.
+\Cref{fig:method-idea} contrasts that kind of comparison with ours. Our method
+removes each of these sources of difference: MOESI is MESI plus \stO\ with every
+other rule identical (\cref{sec:method-delta}), both runs share one cache model, bus
+and set of message sizes and replay the same trace (\cref{sec:method-fixed}),
+differences are taken per trace before averaging over seeds, and both coherence
+axioms are checked on every access so that a bug cannot pass for a speed-up
+(\cref{sec:method-correct}).
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}[0.95]
+\begin{tikzpicture}[font=\sffamily\scriptsize,
+    bx/.style={draw, thick, rounded corners=2pt, minimum width=2.15cm, minimum height=0.55cm, align=center},
+    ar/.style={-{Stealth}, thick}]
+  \node[font=\sffamily\bfseries\small] at (2.6,4.65) {(a) Whole-protocol comparison};
+  \foreach \y/\t in {3.8/States, 3.1/Transitions, 2.4/Forwarding, 1.7/Cache config., 1.0/Timing model} {
+    \node[bx, fill=mesiBlue!12, draw=mesiBlue, minimum width=2.25cm] at (1.15,\y) {\t\ A};
+    \node[bx, fill=moesiOrange!14, draw=moesiOrange, minimum width=2.25cm] at (4.05,\y) {\t\ B};
+    \node[text=alertRed, font=\sffamily\bfseries] at (2.6,\y) {$\neq$};
+  }
+  \node[bx, fill=alertRed!10, draw=alertRed, minimum width=5.1cm] (ra) at (2.6,0.05) {gap in result: cause unknown};
+  \draw[ar, alertRed] (1.15,0.72) -- (1.15,0.33); \draw[ar, alertRed] (4.05,0.72) -- (4.05,0.33);
+  \begin{scope}[xshift=6.9cm]
+  \node[font=\sffamily\bfseries\small] at (2.75,4.65) {(b) Controlled comparison (this report)};
+  \node[bx, fill=coreGrey!10, draw=coreGrey, minimum width=5.5cm] at (2.75,3.8) {one trace, one interleaving};
+  \node[bx, fill=coreGrey!10, draw=coreGrey, minimum width=5.5cm] at (2.75,3.1) {one cache model (size, LRU, 64-B blocks)};
+  \node[bx, fill=coreGrey!10, draw=coreGrey, minimum width=5.5cm] at (2.75,2.4) {one bus, one set of message sizes};
+  \node[bx, fill=mesiBlue!12, draw=mesiBlue, minimum width=2.3cm] (tm) at (1.15,1.5) {MESI rules for\\remote read of \stM};
+  \node[bx, fill=moesiOrange!14, draw=moesiOrange, minimum width=2.3cm] (to) at (4.35,1.5) {MOESI rules for\\remote read of \stM};
+  \draw[{Stealth}-{Stealth}, thick, memGreen] (tm.east) -- node[above, font=\sffamily\bfseries\tiny, text=memGreen]{swap} (to.west);
+  \node[bx, fill=memGreen!12, draw=memGreen, minimum width=5.5cm] (rb) at (2.75,0.05) {gap in result: caused by \stO\ alone};
+  \draw[ar, memGreen] (tm) -- (tm|-rb.north); \draw[ar, memGreen] (to) -- (to|-rb.north);
+  \end{scope}
+\end{tikzpicture}
+\end{bigfig}
+\caption[Whole-protocol versus controlled comparison]{(a) Comparing two separately
+built protocols changes many things at once. (b) Our method runs one simulator
+twice on the same input and changes only the rules that involve \stO.}
+\label{fig:method-idea}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{The One Changed Variable}
+\label{sec:method-delta}
+\sectionmap{[The delta [MOESI as MESI plus O] [Three rules change]
+  [All other rules identical] [Written as a diff]]}
+\index{MESI}\index{MOESI}\index{Owned state}\index{owner}%
+
+MOESI is a class of protocols whose members may choose different allowed actions
+(\cref{sec:own-moesi}), so a comparison has to fix one member. We take the member
+closest to MESI: it adds \stO\ and changes only the three rules that \stO\ forces,
+and is otherwise the MESI of \cref{fig:mesi}.
+\begin{enumerate}[itemsep=1pt]
+  \item Remote read of a block in \stM. MESI: the holder supplies the block,
+    writes it back and moves to \stS. MOESI: the holder supplies the block without
+    writing it back and moves to \stO.
+  \item Remote read of a block in \stO\ (MOESI only): the owner supplies the block
+    and stays in \stO; memory is not involved.
+  \item Eviction of a block in \stO\ (MOESI only): the owner writes the block back,
+    as an eviction from \stM\ does. \stS\ copies stay.
+\end{enumerate}
+A write by any cache to a block in \stO\ or \stS\ is an upgrade in both protocols:
+one control message invalidates all other copies and the writer moves to \stM. If
+the writer did not hold the block, the owner (in \stM\ or \stO) supplies it and is
+invalidated, and memory is not written because the writer becomes the new dirty
+owner. \Cref{fig:moesi-diff} draws the difference as a diff of the two state
+machines and \cref{tab:transition-diff} lists every rule. Other members of the
+class may also forward clean blocks or hand ownership to the latest reader, but
+each of those is a second change. Leaving them out answers the narrow question of
+what \stO\ itself does; such features could be added later and studied one at a
+time with the same method.
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}[1.0]
+\begin{tikzpicture}[fsm]
+  \node[font=\sffamily\bfseries\small] at (2.5,4.5) {(a) MESI: remote read of \stM};
+  \node[stB] (M) at (0,3.0) {\stM};
+  \node[stB] (S) at (5.0,3.0) {\stS};
+  \node[stB] (I) at (2.5,0.2) {\stI};
+  \draw[key] (M) -- node[lb, above, text=alertRed]{readmiss / send data\\+ \textbf{write back}} (S);
+  \draw[bus] (M) -- node[lb, left=3pt]{writemiss /\\send data} (I);
+  \draw[bus] (S) -- node[lb, right=3pt]{write, writemiss /\\---} (I);
+  \node[lb, text=coreGrey] at (2.5,1.95) {memory now up to date};
+  \begin{scope}[xshift=7.6cm]
+  \node[font=\sffamily\bfseries\small] at (2.5,4.5) {(b) MOESI: the same event};
+  \node[stO] (M2) at (0,3.0) {\stM};
+  \node[stO] (O2) at (5.0,3.0) {\stO};
+  \node[stO] (I2) at (0,0.2) {\stI};
+  \node[stO] (S2) at (5.0,0.2) {\stS};
+  \draw[good] (M2) -- node[lb, above, text=memGreen]{readmiss / send data\\(no write back)} (O2);
+  \draw[good] (O2) to[out=30, in=-30, looseness=7] node[lb, right]{readmiss /\\send data} (O2);
+  \draw[bus] (M2) -- node[lb, left=3pt]{writemiss /\\send data} (I2);
+  \draw[bus] (O2) to[bend right=12] node[lb, sloped, above, pos=0.42]{write, writemiss / send data if needed} (I2);
+  \draw[tr] (O2) to[bend left=12] node[lb, sloped, below, pos=0.58]{evict / write back} (I2);
+  \draw[bus] (S2) -- node[lb, below]{write, writemiss / ---} (I2);
+  \end{scope}
+\end{tikzpicture}
+\end{bigfig}
+\caption[MESI and MOESI as a diff]{The only transitions that differ between the
+two protocols compared. (a) In MESI a remote read of a modified block forces a
+writeback (red). (b) In MOESI the same event moves the holder to \stO\ without one
+(green); the owner answers later reads and writes back only on eviction. All
+other transitions are as in \cref{fig:mesi}.}
+\label{fig:moesi-diff}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\caption{Transition rules of the two protocols compared. Shaded rows are the only
+ones that differ, so any measured difference between the runs comes from them.}
+\label{tab:transition-diff}
+\small
+\begin{tabular}{@{}L{3.6cm} L{4.5cm} L{4.6cm}@{}}
+\toprule
+Event (state of other copies) & MESI & MOESI \\
+\midrule
+Read miss, no other copy & memory supplies; requester \stE & same \\
+Read miss, copies in \stE/\stS & memory supplies; \stE$\to$\stS; requester \stS & same \\
+\rowcolor{moesiOrange!12}
+Read miss, a copy in \stM & holder supplies \textbf{and writes back}; holder \stS & holder supplies; holder \stO \\
+\rowcolor{moesiOrange!12}
+Read miss, a copy in \stO & (cannot occur) & owner supplies; owner stays \stO \\
+Write hit in \stE / \stM & silent; requester \stM & same \\
+Write hit in \stS (or \stO) & upgrade (8\,B) invalidates others; \stM & same \\
+Write miss, a dirty copy exists & owner supplies; others invalidated; \stM & same \\
+Write miss, no dirty copy & memory supplies; others invalidated; \stM & same \\
+Evict \stS\ or \stE & silent & same \\
+Evict \stM & write back (72\,B) & same \\
+\rowcolor{moesiOrange!12}
+Evict \stO & (cannot occur) & write back (72\,B) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------
+\section{What Is Held Fixed, and Paired Runs}
+\label{sec:method-fixed}
+\label{sec:method-paired}
+\sectionmap{[Controlled variables [{Trace, caches, bus, latencies}] [Attribution test]
+  [{One trace, two runs}] [Differences before averages]]}
+\index{MESI}\index{MOESI}\index{Owned state}%
+
+\Cref{tab:controlled} lists what is held constant and how the simulator of Part~V
+enforces it. \Cref{fig:attribution-tree} turns the table into a test: a difference
+between the two runs may be credited to \stO\ only if every question is answered
+``yes''. The evaluations reviewed in Chapter~14 do not pass this test.
+
+\begin{table}[htbp]
+\centering
+\caption{Controlled variables, identical in the MESI and MOESI runs of every
+experiment.}
+\label{tab:controlled}
+\small
+\begin{tabular}{@{}L{3.6cm} L{4.6cm} L{4.6cm}@{}}
+\toprule
+Variable & Value & Enforced by \\
+\midrule
+Memory-access trace & one list of (core, block, read/write) & generated once per seed, replayed twice \\
+Order of accesses & trace order (traffic study); each core's own order (timing study) & one replay loop for both protocols \\
+Cache per core & private, write-back, fully associative, LRU, 64-B blocks & one cache class; capacity a parameter \\
+Interconnect & one snooping bus; broadcasts counted once & one bus model \\
+Message sizes & 8\,B control, 72\,B data and writeback & constants of \cref{tab:counting-rules} \\
+Latencies (timing study) & $T_{L1}$, $T_{\mathrm{mem}}$, $T_{\mathrm{coh}}$ of Chapters~2 and~8 & one parameter set per experiment \\
+Accounting at the end & blocks still dirty are written back once & same drain step for both \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=0.95\linewidth}{%
+\begin{forest}
+  decision tree,
+  [{Is the difference between\\the two runs caused by \stO?}
+    [{Same trace and\\same interleaving?}
+      [{Same caches, bus,\\message sizes, latencies?}, el=yes
+        [{All rules not involving\\\stO\ identical?}, el=yes
+          [{Both runs pass the\\coherence checks?}, el=yes
+            [{Yes: attribute\\the difference to \stO}, el=yes]
+            [{No: one run is wrong;\\fix before comparing}, el=no]]
+          [{No: a second feature\\differs (not controlled)}, el=no]]
+        [{No: configuration\\confounds the result}, el=no]]
+      [{No: different sharing,\\not comparable}, el=no]]
+  ]
+\end{forest}}
+\caption[Attribution test]{Decision tree for crediting a measured difference to
+\stO. Each ``no'' leaf names the confounder that could explain the difference
+instead.}
+\label{fig:attribution-tree}
+\end{figure}
+
+Because one trace $W$ is replayed under both protocols, every configuration gives a
+pair of results. For any quantity $X$ (bytes, writebacks, execution time) we
+compute, per pair,
+\begin{equation}
+  \Delta X(W) = X(\mathrm{MESI},W) - X(\mathrm{MOESI},W),
+  \qquad
+  S_X(W) = \frac{\Delta X(W)}{X(\mathrm{MESI},W)},
+  \label{eq:paired}
+\end{equation}
+and only then summarise over seeds by mean, minimum and maximum. For traffic,
+$S_B$ is the fraction of MESI's bytes that MOESI saves; for time,
+$T(\mathrm{MESI})/T(\mathrm{MOESI})$ is the speed-up. Traces differ from each other
+far more than the two protocols differ on one trace, so differencing each pair
+first keeps the trace-to-trace variation out of the comparison.
+
+\label{sec:method-timing}
+The traffic study replays one global access order, so both protocols see the same
+interleaving. The timing study (Chapter~17) cannot do that and stay realistic. Each
+core there has its own operation stream and clock, and the order in which accesses
+reach the bus depends on how long earlier accesses took, as on real hardware.
+MOESI makes some accesses faster, so its accesses can arrive at the bus in a
+slightly different order. The per-core streams and think times are the same in both
+runs; only the interleaving between cores may change. We therefore state and test
+the exact results that need a common interleaving (\cref{prop:residency} and the
+identities of Chapter~16) on the traffic study only, and report timing as paired
+ratios over several seeds.
+
+% ---------------------------------------------------------------
+\section{The Two Runs Hold the Same Blocks}
+\label{sec:method-residency}
+\label{sec:method-example}
+\sectionmap{[Same contents [Valid copies identical at every step]
+  [Same misses and upgrades] [Only write backs differ] [Worked example]]}
+\index{MESI}\index{MOESI}\index{Owned state}\index{Exclusive state}\index{forced writeback}\index{sharing patterns!migratory}\index{LRU replacement}\index{owner}\index{proof}%
+
+The shaded rows of \cref{tab:transition-diff} might seem able to spread. If MOESI
+kept a block that MESI dropped, the two runs would miss on different accesses and
+the difference would no longer be due to \stO\ in any simple sense. This cannot
+happen.
+
+\begin{proposition}[Identical cache contents]
+\label{prop:residency}
+Replay the same trace under MESI and MOESI with the same cache model. After every
+access, the set of (core, block) pairs held in a valid state (\stM, \stO, \stE\ or
+\stS) is the same in both runs, and so is the LRU order of every cache. Both runs
+therefore have exactly the same hits, read misses, write misses and upgrades.
+\end{proposition}
+
+\noindent The proof, by induction over the accesses, is in
+\cref{app:proof-residency}. In short: the shaded read-miss rows install the block
+in the requester and keep the supplier's copy valid in both protocols (as \stS\ in
+MESI, \stO\ in MOESI), a write removes every other copy in both, and evictions are
+chosen by the same LRU order. Under the counting rules of \cref{tab:counting-rules}
+the two runs therefore send the same requests, upgrades and data messages and
+differ only in writebacks. If $W_P$ is the number of writebacks of protocol $P$
+(forced, eviction and end-of-run),
+\begin{equation}
+  \Delta B = B(\mathrm{MESI}) - B(\mathrm{MOESI}) = 72\,\bigl(W_{\mathrm{MESI}} - W_{\mathrm{MOESI}}\bigr)\ \text{bytes,}
+  \label{eq:dB-writebacks}
+\end{equation}
+and the bytes written to memory differ by $64\,(W_{\mathrm{MESI}} -
+W_{\mathrm{MOESI}})$. The proposition holds for the member of the class we chose. A
+member that handed ownership to the reader or forwarded clean blocks would keep the
+same contents, but one that dropped the owner's copy on a remote read would not.
+
+\Cref{tab:method-example} applies the method by hand to a migratory block
+(\cref{sec:dirty-patterns}): three cores read and then write it in turn, and P0
+takes it a second time. The two runs make the same seven coherence transactions
+(read misses at steps 1, 3, 5 and~7, upgrades at 4, 6 and~8). They differ only at
+steps 3, 5 and~7, where MESI adds a 72-byte forced writeback, so the difference is
+$632-416 = 216 = 3\times72$ bytes, as \cref{eq:dB-writebacks} predicts. Both pay
+72 bytes at the end because P0, the last writer, still holds the block dirty and
+nobody read it after step~8.
+
+\begin{table}[htbp]
+\centering
+\caption{The method applied to a migratory block. The valid copies are the same in
+both runs at every step (\cref{prop:residency}); only the labels \stS\ and \stO\
+differ, and with them the bytes.}
+\label{tab:method-example}
+\small
+\begin{tabular}{@{}c l c c c r r@{}}
+\toprule
+Step & Access & Valid copies & MESI states & MOESI states & MESI B & MOESI B \\
+\midrule
+1 & P0 reads  & P0     & E / I / I & E / I / I & 80  & 80 \\
+2 & P0 writes & P0     & M / I / I & M / I / I & 0   & 0  \\
+3 & P1 reads  & P0, P1 & S / S / I & \textbf{O} / S / I & 152 & 80 \\
+4 & P1 writes & P1     & I / M / I & I / M / I & 8   & 8  \\
+5 & P2 reads  & P1, P2 & I / S / S & I / \textbf{O} / S & 152 & 80 \\
+6 & P2 writes & P2     & I / I / M & I / I / M & 8   & 8  \\
+7 & P0 reads  & P0, P2 & S / I / S & S / I / \textbf{O} & 152 & 80 \\
+8 & P0 writes & P0     & M / I / I & M / I / I & 8   & 8  \\
+end & drain   & ---    & ---       & ---       & 72  & 72 \\
+\midrule
+ & \textbf{Total} & & & & \textbf{632} & \textbf{416} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------
+\section{Correctness Before Comparison}
+\label{sec:method-correct}
+\sectionmap{[Correctness [A wrong protocol can look fast]
+  [Check the axioms on every access] [Version numbers] [Stop at the first violation]]}
+\index{MESI}\index{MOESI}\index{MSI}\index{Owned state}\index{Exclusive state}\index{forced writeback}\index{Dirty Sharing Ratio}\index{coherence axioms}\index{owner}%
+
+A protocol that skips a writeback it needs, or leaves a stale copy valid, looks
+cheaper than a correct one, so a comparison means something only if both runs are
+coherent. The checker tests this on every access instead of trusting the
+transition table. After each access it looks at every copy of the block just
+touched and confirms (1) at most one copy is in \stM, \stE\ or \stO; (2) a copy in
+\stM\ or \stE\ is the only valid copy; and (3) MESI never holds \stO\ and MSI never
+holds \stE\ or \stO. These are the single-writer, multiple-reader conditions that
+the axioms of \S12.4.2 imply for an invalidation protocol~\cite{sarangi2025basic}.
+
+State checks cannot catch a valid copy that holds old data. To check values
+without simulating data, every block gets a version number. Each write increments
+the block's latest version, each cache copy records the version it holds, and
+memory records the version last written back. After every access the checker
+confirms (4) every valid copy holds the latest version, so no read is stale, and
+(5) if no cache holds the block in \stM\ or \stO, memory holds the latest version,
+so no write is lost. Condition~5 is what the forced writeback protects in MESI and
+what the owner protects in MOESI, and it catches the most likely MOESI bug, an
+\stO\ copy evicted silently. \Cref{fig:versions} runs the checks on the six-step
+trace of \cref{tab:trace}.
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}[0.95]
+\begin{tikzpicture}[font=\sffamily\scriptsize,
+    cell/.style={draw, minimum width=1.55cm, minimum height=0.5cm, align=center},
+    hd/.style={font=\sffamily\bfseries\scriptsize}]
+  \node[hd] at (-1.1,0.55) {after step};
+  \foreach \i in {1,...,6} { \node[hd] at (\i*1.7,0.55) {\i}; }
+  \node[hd, anchor=east] at (0.5,0) {latest};
+  \node[hd, anchor=east, text=mesiBlue] at (0.5,-0.6) {MESI memory};
+  \node[hd, anchor=east, text=moesiOrange] at (0.5,-1.2) {MOESI memory};
+  \node[hd, anchor=east, text=moesiOrange] at (0.5,-1.8) {MOESI owner};
+  \foreach \i/\l/\m/\o/\w in {1/v0/v0/v0/---, 2/v1/v0/v0/P0 (\stM), 3/v1/v1/v0/P0 (\stO), 4/v1/v1/v0/P0 (\stO), 5/v2/v1/v0/P1 (\stM), 6/v2/v2/v0/P1 (\stO)} {
+    \node[cell, fill=coreGrey!8] at (\i*1.7,0) {\l};
+    \node[cell, fill=mesiBlue!10] at (\i*1.7,-0.6) {\m};
+    \node[cell, fill=moesiOrange!10] at (\i*1.7,-1.2) {\o};
+    \node[cell, fill=moesiOrange!5] at (\i*1.7,-1.8) {\w};
+  }
+  \node[text=memGreen, align=left, anchor=west] at (0.1,-2.55)
+    {MESI: memory is stale only while a copy is in \stM\ (steps 2 and 5), so condition 5 holds.\\
+     MOESI: memory stays at v0, but an owner always holds the latest version, so condition 5 holds.};
+\end{tikzpicture}
+\end{bigfig}
+\caption[Version-number check]{Versions on the six-step trace. Writes create new
+versions at steps 2 and~5. In MESI the forced writebacks at steps 3 and~6 bring
+memory up to date; in MOESI memory is never written during the trace, which is
+correct only because an owner always has the latest version.}
+\label{fig:versions}
+\end{figure}
+
+% ===============================================================
+%  Chapter 16 -- The Dirty Sharing Ratio
+% ===============================================================
+\chapter{The Dirty Sharing Ratio: Predicting the Benefit of MOESI}
+\label{ch:dsr}
+\index{MOESI}\index{Dirty Sharing Ratio}%
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  chapter map,
+  [Chapter 16
+    [Definition [One counter under MESI] [Worked example]]
+    [Dirty epochs [Write to next write] [Where write backs fall]]
+    [Saving identity [MOESI never sends more] [{$S=\sigma\cdot72\,\dsr/\bar b$}]]
+    [Patterns {\&} mixtures [Survival fraction]]
+    [From bytes to time [Two effects of \stO] [Bus load]]
+    [Hypotheses [H1 to H4] [Our contributions]]
+  ]
+\end{forest}}
+\caption[]{Structure of Chapter~16: the metric, its exact
+meaning through dirty epochs, the identity linking it to MOESI's saving, the step
+from bytes to time, and four testable hypotheses.}
+\label{fig:ch16-map}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{Definition}
+\label{sec:dsr-def}
+\sectionmap{[DSR [Coherence transactions under MESI] [Reads served by a modified copy]
+  [Two counters] [Worked example]]}
+\index{MESI}\index{MOESI}\index{forced writeback}\index{Dirty Sharing Ratio}\index{snooping protocol}%
+
+RQ3 asks whether the benefit of removing forced writebacks can be predicted from a
+workload's behaviour under MESI. A predictor that needs a MOESI run is no use, so
+we want a quantity a MESI system can count with almost no extra hardware. Every bus
+transaction under MESI is a read miss, a write miss or an upgrade, and we call
+their total the number of coherence transactions $n_{\mathrm{tx}}$. Some read
+misses find the block in another cache in \stM, and each of these causes a forced
+writeback. We call their number $n_{\mathrm{dr}}$ (dirty reads).
+
+\begin{keybox}[Definition: Dirty Sharing Ratio]
+\[
+  \dsr(W,N) \;=\; \frac{n_{\mathrm{dr}}}{n_{\mathrm{tx}}}
+  \;=\; \frac{\text{read misses served by a cache holding the block in \stM}}
+             {\text{read misses} + \text{write misses} + \text{upgrades}},
+\]
+measured while workload $W$ runs on $N$ cores under MESI.
+\end{keybox}
+
+On a snooping bus, a cache holding the requested block in \stM\ already announces
+that it will supply and flush the data (\cref{fig:snoop-bus}). Counting the bus
+cycles with that announcement gives $n_{\mathrm{dr}}$, and counting all
+transactions gives $n_{\mathrm{tx}}$. Both events are visible to the bus arbiter,
+so two counters are enough (\cref{fig:dsr-counter}). Our simulator keeps the two
+counts directly. For the six-step trace priced in \cref{tab:mesi-bill}, MESI makes
+five coherence transactions (read misses at steps 1, 3, 4 and~6 and the upgrade at
+step~5), and two of the read misses (steps 3 and~6) find the block in \stM, so
+\begin{equation}
+  \dsr = \tfrac{2}{5} = 0.40 .
+  \label{eq:dsr-example}
+\end{equation}
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}[0.92]
+\begin{tikzpicture}[font=\sffamily\scriptsize,
+    cc/.style={draw, thick, rounded corners=2pt, minimum width=1.6cm, minimum height=0.8cm, align=center},
+    ar/.style={-{Stealth}, thick}]
+  \draw[line width=3pt, coreGrey!50] (-0.6,0) -- (11.8,0);
+  \node[font=\sffamily\bfseries\scriptsize, text=coreGrey] at (12.4,0) {bus};
+  \node[cc, fill=tealC!12, draw=tealC] (r) at (0.8,1.5) {P1\\requester};
+  \node[cc, fill=mesiBlue!12, draw=mesiBlue] (h) at (3.6,1.5) {P0\\holds \stM};
+  \node[cc, fill=coreGrey!8, draw=coreGrey] (p2) at (6.4,1.5) {P2\\---};
+  \node[cc, fill=amberC!14, draw=amberC] (mem) at (9.4,1.5) {Memory};
+  \foreach \n in {r,h,p2,mem} { \draw[thick, coreGrey!70] (\n.south) -- (\n.south|-0,0); }
+  \draw[ar, tealC] (r.south) ++(0.3,0) -- ++(0,-0.95) node[below, font=\sffamily\tiny]{readmiss};
+  \draw[ar, alertRed] (h.south) ++(0.3,0) -- ++(0,-0.95) node[below, font=\sffamily\tiny, align=center]{``dirty''\\asserted};
+  \node[cc, fill=memGreen!12, draw=memGreen, minimum width=2.6cm] (cnt) at (4.8,-2.3)
+     {counters in the arbiter\\$n_{\mathrm{tx}}$ \texttt{+= 1} on every transaction\\$n_{\mathrm{dr}}$ \texttt{+= 1} when ``dirty'' asserted};
+  \draw[ar, memGreen] (3.9,-1.25) -- (cnt.north west);
+  \draw[ar, memGreen] (1.1,-1.0) to[out=-90, in=180] (cnt.west);
+  \node[text=memGreen, font=\sffamily\bfseries\small] at (9.6,-2.3) {$\dsr = n_{\mathrm{dr}} / n_{\mathrm{tx}}$};
+\end{tikzpicture}
+\end{bigfig}
+\caption[Measuring the Dirty Sharing Ratio]{Measuring DSR on a MESI snooping bus.
+The holder of a modified block already signals that it will supply the data, so
+two counters give the metric.}
+\label{fig:dsr-counter}
+\end{figure}
+
+\Cref{tab:dsr-example} carries the example through to MOESI. MOESI saves 72 of
+MESI's 472 bytes, or 15.3\,\%, which is half the 30.5\,\% of forced writebacks
+counted in Chapter~7. The forced writeback at step~3 disappears, because P0's owned
+copy is made obsolete by P1's write at step~5 and never needs to reach memory. The
+one at step~6 is only deferred: P1 still owns the block when the run ends and pays
+the writeback then.
+
+\begin{table}[htbp]
+\centering
+\caption{The six-step trace of \cref{tab:trace} under MESI and MOESI, with bytes
+from \cref{tab:counting-rules}. ``Drain'' charges one writeback at the end for
+each block still dirty.}
+\label{tab:dsr-example}
+\small
+\begin{tabular}{@{}c l c c c c l@{}}
+\toprule
+Step & Access & Transaction & Dirty read? & MESI B & MOESI B & Epoch \\
+\midrule
+1 & P0 reads  & read miss & no  & 80  & 80 & --- \\
+2 & P0 writes & (silent)  & --- & 0   & 0  & 1 opens (P0) \\
+3 & P1 reads  & read miss & \textbf{yes} & 152 & 80 & 1 \\
+4 & P2 reads  & read miss & no  & 80  & 80 & 1 \\
+5 & P1 writes & upgrade   & --- & 8   & 8  & 1 ends; 2 opens (P1) \\
+6 & P0 reads  & read miss & \textbf{yes} & 152 & 80 & 2 \\
+end & drain   & ---       & --- & 0   & 72 & 2 ends \\
+\midrule
+ & \textbf{Total} & 5 & 2 & \textbf{472} & \textbf{400} & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------
+\section{Dirty Epochs}
+\label{sec:dsr-epochs}
+\sectionmap{[Epochs [From one write to the next] [At most one write back each]
+  [MESI pays if anyone reads] [MOESI pays if the owner leaves]]}
+\index{MESI}\index{MOESI}\index{Owned state}\index{forced writeback}\index{dirty epoch}\index{owner}%
+
+Fix one block. A \gls{epoch}\index{dirty epoch} starts when some core writes the
+block and ends at the next write to it by any core, or at the end of the run.
+During an epoch the value does not change, and one core, the last writer, holds the
+newest data when the epoch starts. Epochs divide the whole history of a block, so
+each writeback of the block falls in some epoch (\cref{fig:epoch}). Both protocols
+write a block back only when a dirty copy stops being dirty, and after the first
+writeback in an epoch no dirty copy is left until the next write, so each protocol
+makes at most one writeback per epoch. MESI writes back if the epoch has at least
+one remote read (the forced writeback, at the first one), or otherwise if the
+writer evicts its \stM\ copy before the epoch ends. MOESI writes back if and only if
+the owner's copy (\stM\ or \stO) is evicted, or the run ends, before the epoch ends.
+The two differ in one case only: an epoch with at least one remote read in which
+the owner keeps the block until the next write. MESI pays a writeback there and
+MOESI does not, and we call such an epoch \emph{saved}.
+
+\begin{figure}[htbp]
+\centering
+\begin{bigfig}[0.92]
+\begin{tikzpicture}[font=\sffamily\scriptsize]
+  \draw[-{Stealth}, thick, coreGrey] (0,0) -- (12.6,0) node[right]{time};
+  \fill[memGreen!10] (0.6,-0.35) rectangle (11.4,0.35);
+  \node[font=\sffamily\bfseries\scriptsize, text=memGreen] at (6.0,0.62) {one dirty epoch (value unchanged)};
+  \foreach \x/\t in {0.6/{P0 writes}, 11.4/{P2 writes}} {
+     \draw[very thick, alertRed] (\x,-0.4) -- (\x,0.4); \node[text=alertRed, below] at (\x,-0.4) {\t}; }
+  \foreach \x/\t in {3.0/{P1 reads}, 5.6/{P2 reads}, 8.2/{P3 reads}} {
+     \draw[thick, tealC] (\x,-0.3) -- (\x,0.3); \node[text=tealC, below] at (\x,-0.35) {\t}; }
+  \node[anchor=east, text=mesiBlue, font=\sffamily\bfseries\scriptsize] at (0.3,-1.5) {MESI};
+  \draw[mesiBlue, thick] (0.6,-1.5) -- (11.4,-1.5);
+  \node[draw=mesiBlue, fill=mesiBlue!15, rounded corners=1pt, inner sep=2pt] at (3.0,-1.5) {forced WB};
+  \node[text=mesiBlue, align=center] at (5.6,-2.05) {memory\\supplies};
+  \node[text=mesiBlue, align=center] at (8.2,-2.05) {memory\\supplies};
+  \node[text=mesiBlue, anchor=west] at (0.6,-2.65) {1 writeback, at the first remote read, whatever happens later};
+  \node[anchor=east, text=moesiOrange, font=\sffamily\bfseries\scriptsize] at (0.3,-3.5) {MOESI};
+  \draw[moesiOrange, thick] (0.6,-3.5) -- (11.4,-3.5);
+  \foreach \x in {3.0,5.6,8.2} { \node[text=moesiOrange, align=center] at (\x,-4.05) {owner\\supplies}; }
+  \node[draw=moesiOrange, fill=moesiOrange!15, rounded corners=1pt, inner sep=2pt] at (11.4,-3.5) {invalidated};
+  \node[text=moesiOrange, anchor=west] at (0.6,-4.65) {0 writebacks if the owner keeps the block until the next write; 1 if it is evicted first};
+\end{tikzpicture}
+\end{bigfig}
+\caption[A dirty epoch]{One dirty epoch with three remote reads. MESI pays one
+writeback at the first remote read and memory serves later readers. MOESI pays
+nothing while the owner keeps the block, and the value becomes obsolete at the next
+write.}
+\label{fig:epoch}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{The Saving Identity}
+\label{sec:dsr-identity}
+\sectionmap{[Identity [MOESI never sends more bytes] [Saving = 72 per saved epoch]
+  [Survival fraction sigma] [{$S=\sigma\cdot72\,\dsr/\bar b$}]]}
+\index{MESI}\index{MOESI}\index{Dirty Sharing Ratio}\index{survival fraction}\index{dirty epoch}\index{sharing patterns!producer--consumer}\index{sharing patterns!migratory}\index{owner}\index{proof}%
+
+\begin{proposition}[MOESI never sends more bytes]
+\label{prop:never-worse}
+Under the method of Chapter~15 and the counting rules of
+\cref{tab:counting-rules}, for every trace $W$,
+\[
+  0 \;\le\; \Delta B(W) \;=\; 72\, n_{\mathrm{saved}}(W) \;\le\; 72\, n_{\mathrm{dr}}(W),
+\]
+where $n_{\mathrm{saved}}$ is the number of saved epochs and $n_{\mathrm{dr}}$ the
+number of dirty reads under MESI.
+\end{proposition}
+
+\noindent The proof is in \cref{app:proof-never-worse}. It compares the two
+protocols epoch by epoch using \cref{prop:residency}, and notes that each saved
+epoch contains exactly one dirty read. Two consequences follow. In the traffic
+model MOESI cannot lose, so any loss has to come from timing (\cref{sec:dsr-time}).
+And the dirty reads that DSR counts are exactly the epochs MOESI could save. The
+fraction it does save is the \gls{sigma}
+\begin{equation}
+  \sigma = \frac{n_{\mathrm{saved}}}{n_{\mathrm{dr}}} \in [0,1],
+  \label{eq:sigma}
+\end{equation}
+the share of dirty-read epochs whose owner keeps the block until the next write.
+Large caches and frequent rewriting push $\sigma$ towards~1, while small caches,
+which evict owners early, and runs that end with many blocks still owned push it
+down. Dividing $\Delta B$ by MESI's total bytes, writing $\bar b =
+B_{\mathrm{MESI}}/n_{\mathrm{tx}}$ for the average bytes MESI moves per coherence
+transaction (writebacks included), and using $n_{\mathrm{dr}} = \dsr\cdot
+n_{\mathrm{tx}}$ gives the central result of this chapter.
+
+\begin{keybox}[The saving identity]
+\begin{equation}
+  S_B \;=\; \frac{\Delta B}{B_{\mathrm{MESI}}}
+      \;=\; \sigma\,\frac{72\; n_{\mathrm{dr}}}{B_{\mathrm{MESI}}}
+      \;=\; \sigma \cdot F \;=\; \sigma\cdot\frac{72\,\dsr}{\bar b}.
+  \label{eq:identity}
+\end{equation}
+The share of traffic MOESI saves equals the survival fraction times the
+forced-writeback fraction of \cref{eq:fwb-fraction}. Equivalently, it is
+proportional to DSR with constant $72\sigma/\bar b$.
+\end{keybox}
+
+The identity agrees with the earlier examples. For the six-step trace, $\dsr=0.4$,
+$\bar b = 472/5 = 94.4$\,B and $\sigma = 1/2$ (one of the two dirty-read epochs is
+saved), so $0.5\times72\times0.4/94.4 = 15.3\,\%$, as in \cref{tab:dsr-example}.
+For the migratory trace of \cref{tab:method-example} the block has four epochs,
+opened at steps 2, 4, 6 and~8. The first three each have one remote read and end at
+the next write with the owner still holding the block, so all three are saved; the
+fourth has no remote read. Then $n_{\mathrm{dr}}=3$, $n_{\mathrm{tx}}=7$, $\sigma=1$
+and $\bar b = 632/7 \approx 90.3$\,B, giving $72\times(3/7)/90.3 = 216/632 =
+34.2\,\%$. For the producer--consumer model of \cref{eq:pc-model} with $C$
+consumers, each round has $C+1$ transactions of which one is a dirty read, so
+$\dsr = 1/(C+1)$ and $\bar b = (160+80(C-1))/(C+1)$. In steady state the producer
+always keeps the block, so $\sigma=1$ and \cref{eq:identity} becomes
+$72/(160+80(C-1))$, which is 45\,\% for $C=1$, as in \cref{tab:traffic-patterns}.
+
+\Cref{eq:identity} is exact, but besides DSR it contains $\bar b$, which is easy to
+measure under MESI, and $\sigma$, which depends on what happens after each dirty
+read. The predictor we propose is therefore
+\begin{equation}
+  \hat S_B = \frac{72\,\dsr}{\bar b}\qquad(\sigma\text{ taken as }1),
+  \label{eq:predictor}
+\end{equation}
+which overestimates the saving by the factor $1/\sigma$. When $\bar b$ varies little
+between workloads, $\hat S_B$ is close to a straight line in DSR with slope
+$72/\bar b$ (\cref{fig:identity-lines}). How close $\sigma$ stays to~1 and how much
+$\bar b$ varies cannot be derived in general; Part~VI measures both.
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{tikzpicture}
+  \begin{axis}[width=10.5cm, height=5.4cm,
+      xlabel={Dirty Sharing Ratio under MESI}, ylabel={Predicted saving $\hat S_B$ (\%)},
+      xmin=0, xmax=0.5, ymin=0, ymax=46, xtick={0,0.1,0.2,0.3,0.4,0.5},
+      xticklabel style={/pgf/number format/fixed, /pgf/number format/precision=1},
+      legend style={at={(1.02,0.5)}, anchor=west, font=\scriptsize, draw=none},
+      grid=major, grid style={coreGrey!15},
+      label style={font=\small}, tick label style={font=\scriptsize}]
+    \addplot[very thick, tealC, domain=0:0.5] {7200*x/80};   \addlegendentry{$\bar b = 80$\,B}
+    \addplot[very thick, plumC, domain=0:0.5] {7200*x/100};  \addlegendentry{$\bar b = 100$\,B}
+    \addplot[very thick, amberC, domain=0:0.5] {7200*x/130}; \addlegendentry{$\bar b = 130$\,B}
+    \addplot[only marks, mark=*, mark size=2.4pt, moesiOrange] coordinates
+      {(0.5,45) (0.3333,30) (0.2,18) (0.1111,10) (0.0625,5.625)};
+    \addlegendentry{prod.--cons., $C=1,2,4,8,15$}
+    \addplot[only marks, mark=square*, mark size=2.6pt, mesiBlue] coordinates {(0.4,30.5)};
+    \addlegendentry{six-step trace, $\sigma=1$}
+  \end{axis}
+\end{tikzpicture}}
+\caption[The predictor as a family of lines]{\Cref{eq:predictor} for three values of
+$\bar b$. The producer--consumer model lies on the 80\,B line because each round
+moves $80(C+1)$ bytes in $C+1$ transactions. The blue square is the six-step trace
+($\bar b=94.4$\,B) if its last epoch were also saved. Analytical.}
+\label{fig:identity-lines}
+\end{figure}
+
+% ---------------------------------------------------------------
+\section{The Sharing Patterns and Their Mixtures}
+\label{sec:dsr-patterns}
+\sectionmap{[Patterns [DSR of each pattern] [Mixtures weighted by transactions]
+  [A little dirty sharing goes a long way] [Survival fraction]]}
+\index{MESI}\index{MOESI}\index{dirty sharing}\index{Dirty Sharing Ratio}\index{survival fraction}\index{dirty epoch}\index{sharing patterns!producer--consumer}\index{sharing patterns!migratory}\index{LRU replacement}\index{owner}%
+
+\Cref{tab:dsr-patterns} applies the definition to one unit of each sharing pattern
+of \cref{tab:patterns}, in steady state and with caches large enough that owners
+are not evicted; the entries follow from the transaction counts of
+\cref{tab:traffic-patterns}. Private and read-only data never involve dirty data
+read by another core, so their DSR is zero and MOESI saves nothing on them. The two
+dirty-sharing patterns both have $\bar b = 80$\,B, which is why their savings lie on
+one line of \cref{fig:identity-lines}. Migratory sharing has the largest DSR in the
+table, one half, since every hand-off is one dirty read and one upgrade.
+
+\begin{table}[htbp]
+\centering
+\caption{The Dirty Sharing Ratio and the saving identity for one unit of each
+sharing pattern ($C$ consumers per producer write), in steady state with no
+capacity evictions. $S_B$ from \cref{eq:identity}.}
+\label{tab:dsr-patterns}
+\small
+\begin{tabular}{@{}L{3.1cm} c c c c c c@{}}
+\toprule
+Pattern (unit) & $n_{\mathrm{tx}}$ & $n_{\mathrm{dr}}$ & $\dsr$ & $\bar b$ (B) &
+  $\sigma$ & $S_B$ \\
+\midrule
+Private (read, write, evict) & 1 & 0 & 0 & 152 & --- & 0 \\
+Read-only (per reader) & 1 & 0 & 0 & 80 & --- & 0 \\
+Producer--consumer (per round) & $C+1$ & 1 & $\frac{1}{C+1}$ & 80 & 1 &
+  $\frac{0.9}{C+1}$ \\
+Migratory (per hand-off) & 2 & 1 & $\frac{1}{2}$ & 80 & 1 & 45\,\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+A real program mixes the patterns. DSR is a ratio of transaction counts, so the DSR
+of a mixture is the average of the patterns' DSRs weighted by the transactions each
+produces, not by its accesses:
+\begin{equation}
+  \dsr_{\mathrm{mix}} = \frac{\sum_i n_{\mathrm{dr},i}}{\sum_i n_{\mathrm{tx},i}}
+  = \frac{\sum_i n_{\mathrm{tx},i}\,\dsr_i}{\sum_i n_{\mathrm{tx},i}} .
+  \label{eq:dsr-mix}
+\end{equation}
+Private data that mostly hits produces few transactions, so a small amount of
+migratory or producer--consumer sharing can dominate the DSR. If a fraction $m$ of
+all accesses go to migratory blocks (one transaction each, $\dsr = 1/2$) and the
+rest are private accesses with hit rate $h$ ($1-h$ transactions each, $\dsr=0$),
+\begin{equation}
+  \dsr_{\mathrm{mix}}(m,h) = \frac{m/2}{m + (1-m)(1-h)} .
+  \label{eq:dsr-mix-mig}
+\end{equation}
+With a 99\,\% private hit rate, 1\,\% of migratory accesses already gives a DSR of
+0.25, half the maximum (\cref{fig:dsr-mix}). A workload's DSR can therefore be high
+even when sharing is a small part of its accesses, and the identity ties MOESI's
+saving to the DSR, not to the share of accesses.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[c]{0.54\linewidth}\centering
+\begin{tikzpicture}
+  \begin{axis}[width=\linewidth, height=5.0cm,
+      xlabel={Accesses to migratory blocks, $m$ (\%)}, ylabel={$\dsr_{\mathrm{mix}}$},
+      xmin=0, xmax=20, ymin=0, ymax=0.6,
+      legend style={at={(0.98,0.04)}, anchor=south east, font=\tiny, draw=none, fill=white},
+      grid=major, grid style={coreGrey!15},
+      label style={font=\footnotesize}, tick label style={font=\scriptsize}]
+    \addplot[very thick, tealC, domain=0:20, samples=120] {(x/100/2)/((x/100) + (1-x/100)*0.10)};
+      \addlegendentry{private hit rate $h = 90\,\%$}
+    \addplot[very thick, plumC, domain=0:20, samples=120] {(x/100/2)/((x/100) + (1-x/100)*0.03)};
+      \addlegendentry{$h = 97\,\%$}
+    \addplot[very thick, brickC, domain=0:20, samples=160] {(x/100/2)/((x/100) + (1-x/100)*0.01)};
+      \addlegendentry{$h = 99\,\%$}
+    \addplot[thick, dashed, coreGrey, forget plot] coordinates {(0,0.5) (20,0.5)};
+  \end{axis}
+\end{tikzpicture}
+\caption[DSR of a mixture]{\Cref{eq:dsr-mix-mig}: a few per cent of migratory
+accesses dominate the metric (dashed: the migratory maximum, 0.5). Analytical.}
+\label{fig:dsr-mix}
+\end{minipage}\hfill
+\begin{minipage}[c]{0.43\linewidth}\centering
+\adjustbox{max width=\linewidth}{%
+\begin{forest}
+  decision tree,
+  [{One dirty epoch}
+    [{Any remote read\\before the next write?}
+      [{Owner evicted\\before next write?}, el=yes
+        [{Deferred\\(lowers $\sigma$)}, el=yes]
+        [{Run ends\\first?}, el=no
+          [{Deferred:\\paid at end}, el=yes]
+          [{Saved}, el=no]]]
+      [{Nothing\\to save}, el=no]]
+  ]
+\end{forest}}
+\caption[Is an epoch saved?]{Classifying a dirty epoch. The fraction of dirty-read
+epochs that are saved is $\sigma$.}
+\label{fig:sigma-tree}
+\end{minipage}
+\end{figure}
+
+The remaining unknown is $\sigma$. \Cref{fig:sigma-tree} gives the test for one
+epoch. Under the method of Chapter~15 the owner's copy is evicted at the same moment
+in both protocols (\cref{prop:residency}), so $\sigma$ is a property of the workload
+and the cache, not of the protocol. Two things lower it. The first is capacity: if
+the owner touches more distinct blocks during the epoch than its cache can hold, LRU
+evicts the owned block before the next write, and the writeback MESI paid early is
+paid late instead. Small caches, large working sets and long epochs all make this
+more likely. The second is the end of the run: epochs still open when measurement
+stops are charged a writeback, as at step~6 of \cref{tab:dsr-example}. Over a long
+run this is a small fixed number of epochs, so its effect shrinks, but in a short
+trace such as the six-step one it can halve the saving.
+
+% ---------------------------------------------------------------
+\section{From Bytes to Time}
+\label{sec:dsr-time}
+\sectionmap{[Time [O changes two things] [Write back removed]
+  [Owner answers later reads] [Latency per epoch] [Load decides]]}
+\index{MESI}\index{MOESI}\index{Owned state}\index{forced writeback}\index{dirty epoch}\index{AMAT}\index{bus utilisation}\index{cache-to-cache transfer}\index{Effect A and Effect B}\index{coherence miss}%
+
+RQ2 asks whether saved bytes become saved time, and RQ4 whether deferring
+writebacks can cost more than it saves. With the controlled method we can see that
+\stO\ changes two things, with different signs (\cref{fig:two-effects}).
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=0.95\linewidth}{%
+\begin{forest}
+  chapter map,
+  [What \stO\ changes
+    [{Effect A: write back removed}
+      [{at the first remote read of an epoch}]
+      [{saves bus and memory occupancy}]
+      [{and the reader's wait for the flush}]
+      [{sign: always helps}]]
+    [{Effect B: owner answers later reads}
+      [{readers 2, 3, ... of the epoch}]
+      [{cache-to-cache instead of memory}]
+      [{faster if $T_{\mathrm{c2c}} < T_{\mathrm{mem}}$}]
+      [{sign: helps or hurts}]]
+  ]
+\end{forest}}
+\caption[Two effects of the Owned state]{The \stO\ state bundles two effects.
+Effect~A, removing the forced writeback, is the subject of this report; Effect~B
+changes the supplier for later readers. Only Effect~A always helps.}
+\label{fig:two-effects}
+\end{figure}
+
+Take a saved epoch with $r\ge1$ remote reads on an otherwise idle bus. Let
+$T_{\mathrm{coh}}$ be the time for a read served by a cache holding the block in
+\stM\ under MESI, including the writeback (as in \cref{eq:amat-coh}); let
+$t_{\mathrm{wb}}$ be the part spent transferring the writeback; let
+$T_{\mathrm{c2c}} = T_{\mathrm{coh}} - t_{\mathrm{wb}}$ be a cache-to-cache read
+without a writeback; and let $T_{\mathrm{mem}}$ be a read served by memory. Under
+MESI the first reader waits $T_{\mathrm{coh}}$ and the other $r-1$ wait
+$T_{\mathrm{mem}}$, while under MOESI all $r$ wait $T_{\mathrm{c2c}}$. The reader
+latency saved in the epoch is
+\begin{equation}
+  \Delta L(r) \;=\; \underbrace{\bigl(T_{\mathrm{coh}} - T_{\mathrm{c2c}}\bigr)}_{\text{Effect A}\;=\;t_{\mathrm{wb}}}
+  \;+\; \underbrace{(r-1)\bigl(T_{\mathrm{mem}} - T_{\mathrm{c2c}}\bigr)}_{\text{Effect B}} .
+  \label{eq:dL}
+\end{equation}
+With the assumed $T_{\mathrm{coh}}=60$ and $T_{\mathrm{mem}}=100$ cycles (Chapters~2
+and~8) and the 9-cycle transfer of a 72-byte writeback on the 8-byte-per-cycle bus
+of Chapter~17, Effect~A is 9 cycles per saved epoch and Effect~B is $100-51 = 49$
+cycles per extra reader. Effect~B changes sign once a cache-to-cache read is slower
+than a memory read (\cref{fig:dL}). With $T_{\mathrm{c2c}}=141$ cycles, for
+example, an epoch with three readers loses $9-2\times41 = -73$ cycles under MOESI.
+
+\begin{figure}[htbp]
+\centering
+\adjustbox{max width=\linewidth}{%
+\begin{tikzpicture}
+  \begin{axis}[width=10cm, height=5.2cm,
+      xlabel={Remote reads per saved epoch, $r$}, ylabel={$\Delta L(r)$ (cycles)},
+      xmin=1, xmax=8, ymin=-320, ymax=360, xtick={1,...,8},
+      legend style={at={(1.02,0.5)}, anchor=west, font=\scriptsize, draw=none},
+      grid=major, grid style={coreGrey!15},
+      label style={font=\small}, tick label style={font=\scriptsize}]
+    \addplot[fill=alertRed!8, draw=none, forget plot] coordinates {(1,0) (8,0) (8,-320) (1,-320)} \closedcycle;
+    \addplot[very thick, memGreen, mark=*, domain=1:8, samples=8] {9 + (x-1)*(100-51)};
+      \addlegendentry{$T_{\mathrm{c2c}} = 51$}
+    \addplot[very thick, amberC, mark=square*, domain=1:8, samples=8] {9 + (x-1)*(100-91)};
+      \addlegendentry{$T_{\mathrm{c2c}} = 91$}
+    \addplot[very thick, alertRed, mark=triangle*, domain=1:8, samples=8] {9 + (x-1)*(100-141)};
+      \addlegendentry{$T_{\mathrm{c2c}} = 141$}
+    \addplot[thick, dashed, coreGrey, forget plot] coordinates {(1,0) (8,0)};
+  \end{axis}
+\end{tikzpicture}}
+\caption[Latency saved per epoch]{\Cref{eq:dL} with $T_{\mathrm{mem}}=100$ and
+$t_{\mathrm{wb}}=9$ cycles. Effect~A gives each saved epoch 9 cycles; Effect~B adds
+or subtracts $T_{\mathrm{mem}}-T_{\mathrm{c2c}}$ per further reader (shaded: MOESI
+slower). Analytical, idle bus.}
+\label{fig:dL}
+\end{figure}
+
+\Cref{eq:dL} ignores waiting. On a bus that carries one message at a time
+(\cref{eq:util}) every transaction also occupies the bus, and under MESI a dirty
+read occupies it for one more 72-byte message. On a lightly used bus requests rarely
+wait, so the occupancy MOESI saves shortens almost nothing, and execution time
+changes only by the latency of \cref{eq:dL}, spread over a run dominated by
+computation and hits. As utilisation nears 100\,\% waiting grows sharply
+(Chapter~8), execution time is set by the total time the bus is busy, and the
+speed-up of MOESI tends to the ratio of bus-busy times,
+\begin{equation}
+  \frac{T(\mathrm{MESI})}{T(\mathrm{MOESI})} \;\longrightarrow\;
+  \frac{C_{\mathrm{bus}}(\mathrm{MESI})}{C_{\mathrm{bus}}(\mathrm{MOESI})}
+  \qquad\text{as } U \to 100\,\%,
+  \label{eq:sat-limit}
+\end{equation}
+where $C_{\mathrm{bus}}$ is the total number of cycles the bus is occupied. By
+\cref{prop:residency} the two runs differ in $C_{\mathrm{bus}}$ only by the
+occupancy of the writebacks MOESI avoids. The same holds for the memory port, since
+every forced writeback is also a 64-byte memory write.
+
+\Cref{eq:amat-coh} shows the low-load case in numbers. Chapter~8 used the 3-cycle
+single-core AMAT, $T_{\mathrm{coh}}=60$ cycles and a coherence-miss rate of 1, 2, 4
+and 8\,\% at 2, 4, 8 and 16 cores (\cref{fig:amat-bars}). In the case most
+favourable to Effect~A, every coherence miss is a dirty read with one reader
+($r=1$), so under MOESI each costs $T_{\mathrm{c2c}}=51$ cycles instead of 60
+(\cref{tab:amat-compare}). Even then, at 16 cores Effect~A saves 0.72 of 7.8 cycles,
+under 10\,\%. A larger time gain has to come from Effect~B or from bus load
+(\cref{eq:sat-limit}), which is why H2 below ties the gain to utilisation.
+
+\begin{table}[htbp]
+\centering
+\caption{AMAT from \cref{eq:amat-coh} with the illustrative values of Chapter~8,
+when every coherence miss is a dirty read with one reader. Idle interconnect;
+cycles.}
+\label{tab:amat-compare}
+\small
+\begin{tabular}{@{}c c c c c c@{}}
+\toprule
+Cores & $m_{\mathrm{coh}}$ & AMAT, MESI & AMAT, MOESI & Saved (cycles) & Saved (\%) \\
+\midrule
+2  & 1\,\% & 3.60 & 3.51 & 0.09 & 2.5 \\
+4  & 2\,\% & 4.20 & 4.02 & 0.18 & 4.3 \\
+8  & 4\,\% & 5.40 & 5.04 & 0.36 & 6.7 \\
+16 & 8\,\% & 7.80 & 7.08 & 0.72 & 9.2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------
+\section{Hypotheses and Contributions}
+\label{sec:dsr-hypotheses}
+\label{sec:contrib-summary}
+\sectionmap{[Hypotheses [H1: F falls with cores] [H2: load gates the time gain]
+  [H3: DSR predicts the saving] [H4: MOESI loses only through timing] [Contributions C1--C16]]}
+\index{MOESI}\index{Dirty Sharing Ratio}\index{survival fraction}\index{directory protocol}\index{sharing patterns!migratory}\index{cache-to-cache transfer}%
+
+The analysis turns each research question of \cref{tab:rq} into a hypothesis that
+Part~VI tests (\cref{tab:hypotheses}). We state them here, before any measurement,
+so that Part~VI can report where they fail.
+
+\begin{table}[htbp]
+\centering
+\caption{Hypotheses derived in Part~IV, one per research question, and how each is
+tested in Part~VI.}
+\label{tab:hypotheses}
+\small
+\begin{tabular}{@{}l L{5.6cm} L{2.6cm} L{3.4cm}@{}}
+\toprule
+ & Hypothesis & Basis & Test in Part VI \\
+\midrule
+H1 (RQ1) & For a fixed sharing structure, $F(W,N)$ falls as $N$ grows,
+  because more readers share each epoch: one forced writeback, more 80-byte
+  read misses. & \cref{eq:pc-model}, \cref{sec:dsr-epochs} & $F$ measured for
+  $N = 2$ to 16 \\
+H2 (RQ2) & The execution-time gain of MOESI is near zero at low bus
+  utilisation and rises towards the bus-occupancy ratio as utilisation
+  approaches 100\,\%. & \cref{eq:dL,eq:sat-limit} & load sweep: gain against
+  utilisation \\
+H3 (RQ3) & The traffic saving obeys \cref{eq:identity} exactly; with
+  $\sigma$ near 1 and $\bar b$ nearly constant, DSR predicts it through
+  \cref{eq:predictor}. & \cref{prop:never-worse}, \cref{eq:identity} & DSR
+  against measured $S_B$; error of $\hat S_B$ \\
+H4 (RQ4) & MOESI never moves more bytes than MESI; it can take more time
+  only through Effect~B (when $T_{\mathrm{c2c}} > T_{\mathrm{mem}}$) or owner
+  contention. Small caches reduce the gain by lowering $\sigma$ but cannot
+  reverse it in bytes. & \cref{prop:never-worse}, \cref{eq:dL} & cache-size
+  sweep; latency sensitivity sweep \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+DSR is not the first measure of sharing. Archibald and Baer parameterised their
+simulations by the fraction of references to shared
+blocks~\cite[p.~286]{archibald1986evaluation}, and adaptive protocols detect
+migratory blocks at run time, for example by noticing a write by a processor other
+than the last writer~\cite{stenstrom1993adaptive,nilsson1994adaptive}.
+\Cref{tab:dsr-vs} shows how DSR differs from these and from $F$. The identity
+\cref{eq:identity} is exact only under the method of Chapter~15: one MOESI member,
+the same cache contents in both runs, and the counting rules of
+\cref{tab:counting-rules}. A directory protocol, another MOESI member or a
+non-inclusive hierarchy would change $\bar b$ and could change $\sigma$. DSR also
+predicts traffic only; for time, bus load and the relative speed of cache-to-cache
+and memory transfers matter as well (\cref{sec:dsr-time}). Part~VII returns to
+these limits.
+
+\begin{table}[htbp]
+\centering
+\caption{The Dirty Sharing Ratio compared with related measures.}
+\label{tab:dsr-vs}
+\small
+\begin{tabular}{@{}L{3.1cm} L{3.0cm} L{3.4cm} L{3.4cm}@{}}
+\toprule
+Measure & What it counts & Used for & Limitation for RQ3 \\
+\midrule
+Shared-reference fraction~\cite{archibald1986evaluation} & references to
+  shared blocks & input parameter of a model & ignores whether shared data is
+  dirty when read \\
+Migratory detection~\cite{stenstrom1993adaptive,nilsson1994adaptive} & blocks
+  written by successive processors & run-time protocol adaptation & per block,
+  inside one protocol; not a workload score \\
+Forced-writeback fraction $F$ (\cref{eq:fwb-fraction}) & bytes of forced
+  writebacks & definition of the problem & needs byte accounting of all
+  messages \\
+Dirty Sharing Ratio & dirty reads per transaction & choosing between
+  protocols before building one & needs $\bar b$; assumes $\sigma \approx 1$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\label{sec:contrib-parts123}
+\label{sec:contrib-parts45}
+\Cref{tab:contrib-list} collects what this report adds to the sources it reviews.
+C1 to C10 are analytical results reached while studying existing work in Parts~I
+to~III; the material they are built from belongs to the cited sources, and the
+results are ours. C11 to C16 are the method, metric and tool of Parts~IV and~V. All
+analytical results rest on the message sizes of \cref{tab:msg-classes} and the
+counting rules of \cref{tab:counting-rules}, including our assumed 16-byte word
+update, and C3 to C10 ignore contention, latency and capacity, so they say nothing
+about execution time on their own.
+
+\begin{table}[htbp]
+\centering
+\caption{Contributions of this report. ``Basis'' names the published material
+each result is built from.}
+\label{tab:contrib-list}
+\label{tab:contrib-45}
+\footnotesize
+\renewcommand{\arraystretch}{1.12}
+\begin{tabular}{@{}l L{4.1cm} L{4.6cm} L{3.4cm}@{}}
+\toprule
+ & Result & What it shows & Where; basis \\
+\midrule
+C1 & Full MESI state diagrams & completes the textbook's ``exercise for the
+  reader'' & \cref{fig:mesi}; \cite[p.~603]{sarangi2025basic} \\
+C2 & One trace under MSI, MESI and MOESI & the protocols differ at three points:
+  \stE, silent upgrade, \stO & \cref{tab:trace}; \cite{papamarcos1984illinois,sweazey1986moesi} \\
+C3 & The trace priced under MESI & writebacks are 30.5\,\% of 472 bytes &
+  \cref{tab:mesi-bill} \\
+C4 & Producer--consumer model & forced writeback is 72\,B per round: 45\,\% of
+  traffic with one consumer, 10\,\% with eight & \cref{eq:pc-model,fig:pc-model} \\
+C5 & Superseded-writeback count & over $k$ rounds MESI writes back $k$ times,
+  MOESI once & \cref{fig:wasted-timeline,eq:wb-timing} \\
+C6 & One counting rule, six protocols, four patterns & ownership saves 45\,\% of
+  bytes and every memory write in dirty sharing & \cref{tab:traffic-patterns,fig:bars-pc,fig:bars-mig} \\
+C7 & Update versus invalidate crossover & update beats MESI below $w=10$ and
+  MOESI below $w=5.5$ & \cref{fig:update-vs-invalidate}; \cite{archibald1986evaluation,thacker1987firefly} \\
+C8 & Dirty remote read on point-to-point systems & DASH moves 160\,B and writes
+  memory; an owner directory moves 96\,B & \cref{fig:dir-dirty-read,tab:p2p}; \cite{lenoski1990dash} \\
+C9 & Five behaviours on one transaction & only the owner outcome shares dirty data
+  without a memory write & \cref{fig:remote-read-tree} \\
+C10 & Organisation is separate from semantics & a directory changes routing, not
+  the writeback & \cref{fig:classes,tab:organisations} \\
+\midrule
+C11 & Controlled comparison method & MOESI as MESI plus three rules; paired runs &
+  \cref{sec:method-delta,sec:method-fixed} \\
+C12 & Identical cache contents & the runs differ only in writebacks &
+  \cref{prop:residency}, \cref{eq:dB-writebacks} \\
+C13 & Dirty Sharing Ratio & measurable with two counters under MESI & \cref{sec:dsr-def} \\
+C14 & Dirty epochs and the saving identity & MOESI never moves more bytes;
+  $S_B = \sigma\cdot72\,\dsr/\bar b$ & \cref{prop:never-worse}, \cref{eq:identity} \\
+C15 & Effect~A and Effect~B & the latency of each, and when B hurts &
+  \cref{eq:dL}, \cref{fig:two-effects} \\
+C16 & Two-layer simulator & coherence checked on every access; verified against
+  every analytical number & Chapter~17 \\
+\bottomrule
+\end{tabular}
+\end{table}
